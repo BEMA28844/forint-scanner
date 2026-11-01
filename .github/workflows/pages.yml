@@ -1,0 +1,40 @@
+# Deploy the repository root as a static site to GitHub Pages.
+name: Deploy static content to Pages
+
+on:
+  push:
+    branches: ["main"]
+  workflow_dispatch:
+
+# contents: read is required for checkout once a permissions block is set.
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# One production deployment at a time; do not cancel a deploy that is already running.
+concurrency:
+  group: "pages"
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Setup Pages
+        uses: actions/configure-pages@v5
+      - name: Upload artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          # Repo root is the site. Hidden files must be included so .nojekyll is published.
+          # .git and .github are excluded by the action either way.
+          path: '.'
+          include-hidden-files: true
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v5

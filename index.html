@@ -1,0 +1,159 @@
+<!doctype html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Forint→€">
+<meta name="theme-color" content="#0b3d2e">
+<title>Forint → Euro Scanner</title>
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="apple-touch-icon" href="icons/icon-180.png">
+<link rel="icon" href="icons/icon-192.png">
+<link rel="stylesheet" href="css/styles.css">
+</head>
+<body>
+<header id="topbar">
+  <div id="rate" title="Wechselkurs">
+    <div id="rateMain">Kurs wird geladen…</div>
+    <div id="rateSub"></div>
+  </div>
+  <button id="btnSettings" class="icon" aria-label="Einstellungen">⚙︎</button>
+</header>
+
+<main>
+  <!-- Kamera -->
+  <section id="view-camera" class="view active">
+    <div id="camWrap">
+      <video id="video" playsinline muted autoplay></video>
+      <div id="scanFrame"><span id="scanHint">Preisschild in den Rahmen halten</span></div>
+      <div id="overlay" class="hidden">
+        <div id="ovEur">–</div>
+        <div id="ovHuf">–</div>
+        <div id="ovLast" class="hidden"></div>
+      </div>
+      <div id="camStart">
+        <p>Kamera richtet sich auf das Preisschild. Der Euro-Preis erscheint live im Bild.</p>
+        <button id="btnStartCam" class="primary big">📷 Kamera starten</button>
+        <p class="small" id="camErr"></p>
+      </div>
+      <div id="ocrStatus" class="pill">OCR lädt…</div>
+      <div id="marketPill" class="pill"></div>
+    </div>
+    <div class="camActions">
+      <button id="btnPause" class="secondary">⏸ Pause</button>
+      <button id="btnSave" class="primary">⭐ Merken</button>
+      <button id="btnManual" class="secondary">⌨︎ Eingeben</button>
+    </div>
+  </section>
+
+  <!-- Verlauf -->
+  <section id="view-history" class="view">
+    <div class="toolbar">
+      <input id="histSearch" type="search" placeholder="Artikel oder Markt suchen…">
+    </div>
+    <ul id="histList" class="list"></ul>
+    <div class="toolbar">
+      <button id="btnExport" class="secondary">⬇︎ Export (CSV)</button>
+    </div>
+  </section>
+
+  <!-- Tanken -->
+  <section id="view-fuel" class="view">
+    <div class="toolbar">
+      <button id="btnFuel" class="primary">⛽ Tankstellen im Umkreis 10 km suchen</button>
+    </div>
+    <p id="fuelInfo" class="small"></p>
+    <ul id="fuelList" class="list"></ul>
+  </section>
+
+  <!-- Kassenbon -->
+  <section id="view-receipt" class="view">
+    <div class="toolbar column">
+      <label class="primary filebtn">🧾 Kassenbon fotografieren
+        <input id="receiptCam" type="file" accept="image/*" capture="environment" hidden>
+      </label>
+      <label class="secondary filebtn">🖼 Foto aus Mediathek wählen
+        <input id="receiptFile" type="file" accept="image/*" hidden>
+      </label>
+    </div>
+    <p id="receiptStatus" class="small"></p>
+    <img id="receiptImg" alt="" class="hidden">
+    <div id="receiptForm" class="hidden">
+      <div class="row">
+        <label>Markt <input id="rcMarket" list="marketList" placeholder="z. B. Lidl Keszthely"></label>
+        <label>Datum <input id="rcDate" type="datetime-local"></label>
+      </div>
+      <table id="rcTable"><thead><tr><th></th><th>Artikel</th><th>Preis (Ft)</th><th>€</th></tr></thead><tbody></tbody></table>
+      <p id="rcTotal" class="small"></p>
+      <div class="toolbar">
+        <button id="rcAdd" class="secondary">＋ Zeile</button>
+        <button id="rcSave" class="primary">💾 Auswahl speichern</button>
+      </div>
+      <details><summary class="small">Erkannter Text</summary><pre id="rcRaw"></pre></details>
+    </div>
+  </section>
+</main>
+
+<div id="ticker"><div id="tickerInner"></div></div>
+
+<nav id="tabs">
+  <button data-view="camera" class="active">📷<span>Scannen</span></button>
+  <button data-view="history">📋<span>Verlauf</span></button>
+  <button data-view="fuel">⛽<span>Tanken</span></button>
+  <button data-view="receipt">🧾<span>Kassenbon</span></button>
+</nav>
+
+<datalist id="articleList"></datalist>
+<datalist id="marketList"></datalist>
+
+<!-- Speichern-Dialog -->
+<dialog id="saveDlg">
+  <form method="dialog" id="saveForm">
+    <h3>Preis merken</h3>
+    <label>Artikel <input id="svName" list="articleList" placeholder="z. B. Túró Rudi" autocomplete="off"></label>
+    <div id="svLast" class="small hint"></div>
+    <div class="row">
+      <label>Preis (Ft) <input id="svHuf" type="number" inputmode="numeric" min="0" step="1"></label>
+      <label>Euro <input id="svEur" readonly></label>
+    </div>
+    <label>Markt <input id="svMarket" list="marketList" placeholder="wird per Standort ermittelt"></label>
+    <div class="dlgActions">
+      <button value="cancel" class="secondary" formnovalidate>Abbrechen</button>
+      <button id="svOk" value="ok" class="primary">Speichern</button>
+    </div>
+  </form>
+</dialog>
+
+<!-- Einstellungen -->
+<dialog id="setDlg">
+  <form method="dialog">
+    <h3>Einstellungen</h3>
+    <label>Fester Markt (überschreibt Standort-Erkennung)
+      <input id="setMarket" list="marketList" placeholder="leer = automatisch">
+    </label>
+    <label>Kurs manuell (Ft für 1 €, leer = EZB-Kurs)
+      <input id="setRate" type="number" inputmode="decimal" step="0.01" placeholder="z. B. 385">
+    </label>
+    <label>Optional: kostenloser API-Schlüssel für Spritpreise (nakordoni.eu „Explorer“)
+      <input id="setFuelKey" placeholder="leer = nur Tankstellen ohne Preise" autocomplete="off">
+    </label>
+    <label class="check"><input id="setOcrText" type="checkbox"> Artikelnamen im Bild erkennen (langsamer)</label>
+    <p class="small">Alle Daten bleiben nur auf diesem Gerät gespeichert.</p>
+    <div class="dlgActions">
+      <button value="wipe" id="btnWipe" class="danger" type="button">Verlauf löschen</button>
+      <button value="ok" class="primary">Fertig</button>
+    </div>
+  </form>
+</dialog>
+
+<div id="toast" class="hidden"></div>
+
+<script src="vendor/tesseract/tesseract.min.js"></script>
+<script src="js/parse.js"></script>
+<script src="js/db.js"></script>
+<script src="js/app.js"></script>
+</body>
+</html>
