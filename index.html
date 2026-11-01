@@ -62,11 +62,20 @@
 
   <!-- Tanken -->
   <section id="view-fuel" class="view">
-    <div class="toolbar">
-      <button id="btnFuel" class="primary">⛽ Tankstellen im Umkreis 10 km suchen</button>
+    <div class="toolbar column">
+      <div class="row fuelSearch">
+        <label>Ort oder PLZ
+          <input id="fuelPlace" type="search" placeholder="z. B. 8360 oder Keszthely" autocomplete="off" enterkeyhint="search">
+        </label>
+        <button id="btnFuelSearch" class="primary" type="button">Suchen</button>
+      </div>
+      <button id="btnFuelLast" class="secondary hidden" type="button">Zuletzt verwendeten Ort laden</button>
+      <button id="btnFuel" class="secondary" type="button">📍 Standort erneut versuchen</button>
     </div>
     <p id="fuelInfo" class="small"></p>
+    <ul id="fuelSuggest" class="list"></ul>
     <ul id="fuelList" class="list"></ul>
+    <p id="fuelHint" class="small">Ohne Standortfreigabe oben Ort oder PLZ suchen. iPhone: Einstellungen › Datenschutz &amp; Sicherheit › Ortungsdienste › Safari-Websites › „Beim Verwenden“.</p>
   </section>
 
   <!-- Kassenbon -->
@@ -137,8 +146,19 @@
     <label>Kurs manuell (Ft für 1 €, leer = EZB-Kurs)
       <input id="setRate" type="number" inputmode="decimal" step="0.01" placeholder="z. B. 385">
     </label>
-    <label>Optional: kostenloser API-Schlüssel für Spritpreise (nakordoni.eu „Explorer“)
-      <input id="setFuelKey" placeholder="leer = nur Tankstellen ohne Preise" autocomplete="off">
+    <label>Optional: nakordoni.eu Explorer-Schlüssel (Kassenpreise, u. a. Ungarn)
+      <input id="setFuelKey" placeholder="leer = ohne diesen Dienst" autocomplete="off">
+      <span class="small">Kostenlos, ohne Kreditkarte: <a href="https://nakordoni.eu/en/developers" target="_blank" rel="noopener noreferrer">nakordoni.eu/en/developers</a></span>
+    </label>
+    <label>Optional: Tankerkönig-Schlüssel (aktuelle Kassenpreise in Deutschland)
+      <input id="setTankerKey" placeholder="leer = ohne Tankerkönig" autocomplete="off">
+      <span class="small">Kostenlos: <a href="https://creativecommons.tankerkoenig.de/" target="_blank" rel="noopener noreferrer">creativecommons.tankerkoenig.de</a></span>
+    </label>
+    <label>Karten-App für die Route
+      <select id="setMapsApp">
+        <option value="apple">Apple Karten</option>
+        <option value="google">Google Maps</option>
+      </select>
     </label>
     <label class="check"><input id="setOcrText" type="checkbox"> Artikelnamen im Bild erkennen (langsamer)</label>
     <p class="small">Alle Daten bleiben nur auf diesem Gerät gespeichert.</p>
@@ -149,10 +169,21 @@
   </form>
 </dialog>
 
+<dialog id="routeDlg">
+  <h3>Route</h3>
+  <p id="routeName" class="small"></p>
+  <div class="routeSheet">
+    <button type="button" id="routeApple" class="secondary">🍎 Apple Karten</button>
+    <button type="button" id="routeGoogle" class="secondary">🗺 Google Maps</button>
+    <button type="button" id="routeCancel" class="secondary">Abbrechen</button>
+  </div>
+</dialog>
+
 <div id="toast" class="hidden"></div>
 
 <script src="vendor/tesseract/tesseract.min.js"></script>
 <script src="js/parse.js"></script>
+<script src="js/fuel.js"></script>
 <script src="js/db.js"></script>
 <script src="js/app.js"></script>
 </body>

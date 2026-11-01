@@ -1,7 +1,7 @@
 /* Service Worker: App-Dateien offline verfügbar machen */
-const VERSION = 'forint-v1.0.0';
+const VERSION = 'forint-v1.1.0';
 const SHELL = [
-  './', 'index.html', 'css/styles.css', 'js/app.js', 'js/parse.js', 'js/db.js', 'manifest.webmanifest',
+  './', 'index.html', 'css/styles.css', 'js/app.js', 'js/parse.js', 'js/fuel.js', 'js/db.js', 'manifest.webmanifest',
   'icons/icon-180.png', 'icons/icon-192.png', 'icons/icon-512.png',
   'vendor/tesseract/tesseract.min.js', 'vendor/tesseract/worker.min.js',
 ];
