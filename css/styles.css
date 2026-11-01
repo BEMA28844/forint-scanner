@@ -52,6 +52,8 @@ main{flex:1;position:relative;overflow:hidden}
 .fuelSearch button{flex:0 0 auto;margin-bottom:8px}
 #fuelSuggest li{cursor:pointer}
 #fuelHint{margin-top:8px}
+#fuelSources{margin-top:4px}
+#fuelSources a,#fuelInfo a,#fuelList a{color:var(--accent2)}
 .routeSheet{display:flex;flex-direction:column;gap:8px;margin-top:8px}
 .routeSheet button{width:100%}
 select{font:inherit;width:100%;padding:9px 10px;border-radius:10px;border:1px solid #33433b;background:#0c120f;color:var(--fg)}

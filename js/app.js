@@ -469,11 +469,16 @@
     $('#fuelList').innerHTML = stations.length ? stations.map(s => {
       const title = esc(s.name) + (s.brand && s.name && s.brand !== s.name ? ' – ' + esc(s.brand) : '');
       const q = s.quote;
-      const meta = q ? 'Quelle: ' + q.source + (q.petrol && q.petrol.updated ? ' · ' + whenText(q.petrol.updated) : q.diesel && q.diesel.updated ? ' · ' + whenText(q.diesel.updated) : ' · abgerufen ' + whenText(Date.now())) : '';
+      const fromNako = q && String(q.source || '').toLowerCase().includes('nakordoni');
+      const updated = q && ((q.petrol && q.petrol.updated) || (q.diesel && q.diesel.updated));
+      const whenLabel = !q ? '' : updated ? whenText(updated) : 'abgerufen ' + whenText(Date.now());
+      const meta = !q ? '' : fromNako
+        ? '<a href="https://nakordoni.eu" target="_blank" rel="noopener">Preise: nakordoni.eu</a> · ' + esc(whenLabel)
+        : 'Quelle: ' + esc(q.source) + ' · ' + esc(whenLabel);
       return `<li><div class="t"><span>⛽ ${title}</span><span>${esc(kmText(s.d))}</span></div>
         <div class="m">${esc(s.address || '')}${s.opening ? (s.address ? ' · ' : '') + esc(s.opening) : ''}</div>
         <div class="fuelprices"><span>Benzin 95: ${priceHtml(q && q.petrol)}</span><span>Diesel: ${priceHtml(q && q.diesel)}</span></div>
-        ${meta ? `<div class="m">${esc(meta)}</div>` : ''}
+        ${meta ? `<div class="m">${meta}</div>` : ''}
         <div class="acts"><button type="button" data-route="${stations.indexOf(s)}">Route</button></div></li>`;
     }).join('') : '<li class="small">Keine Tankstelle im Umkreis von 10 km.</li>';
     $('#fuelList').querySelectorAll('[data-route]').forEach(btn => btn.addEventListener('click', () => openRouteSheet(stations[Number(btn.dataset.route)])));
