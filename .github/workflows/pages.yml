@@ -1,4 +1,5 @@
 # Deploy the repository root as a static site to GitHub Pages.
+# Repository Settings → Pages → Source must be GitHub Actions.
 name: Deploy static content to Pages
 
 on:
