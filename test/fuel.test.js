@@ -153,6 +153,12 @@ t('rankPlaces prefers HU over an earlier BG hit', () => {
   assert.strictEqual(ranked[2].country, 'bg');
 });
 
+t('place heading uses town and postcode', () => {
+  assert.strictEqual(F.placeHeading({ town: 'Weyhe', postcode: '28844' }), 'Tankstellen bei Weyhe (28844)');
+  assert.strictEqual(F.placeHeading({ town: 'Keszthely' }), 'Tankstellen bei Keszthely');
+  assert.strictEqual(F.placeHeading(null), '');
+});
+
 t('nominatim search parse', () => {
   const list = F.parseNominatimSearch([
     { lat: '42.09', lon: '27.42', display_name: '8360, Bulgaria', address: { country_code: 'bg' } },

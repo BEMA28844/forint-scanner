@@ -329,7 +329,25 @@
       lon: num(p.lon),
       label: p.display_name || '',
       country: p.address && p.address.country_code ? String(p.address.country_code).toUpperCase() : null,
+      town: addressTown(p.address),
+      postcode: p.address && p.address.postcode ? String(p.address.postcode) : '',
     })).filter(p => p.lat != null && p.lon != null));
+  }
+
+  function addressTown(address) {
+    const a = address || {};
+    return a.city || a.town || a.village || a.municipality || a.hamlet || '';
+  }
+
+  function placeHeading(p) {
+    if (!p) return '';
+    const town = p.town || '';
+    const plz = p.postcode || '';
+    if (town && plz) return 'Tankstellen bei ' + town + ' (' + plz + ')';
+    if (town) return 'Tankstellen bei ' + town;
+    if (plz) return 'Tankstellen bei ' + plz;
+    const label = String(p.label || '').split(',')[0].trim();
+    return label ? 'Tankstellen bei ' + label : '';
   }
 
   function nominatimSearchUrl(q, opts) {
@@ -368,6 +386,6 @@
     LIVE_STATION_COUNTRIES, WEEKLY_SLUG, PREFERRED_COUNTRIES, GEO_PRIMARY, GEO_FALLBACK, OVERPASS_FUEL,
     distKm, nearestFuelStations, parseNakordoniFuel, parseTankerkoenig, parseFuelPricesStations,
     parseWeeklyAverage, matchPrices, rankPlaces, parseNominatimSearch, nominatimSearchUrl, overpassFuelQuery,
-    bestPlace, mapsUrl, isPlaceholderQuote, formatFuelPrice, formatUpdatedAt, pinPrice, normCurrency,
+    bestPlace, mapsUrl, isPlaceholderQuote, formatFuelPrice, formatUpdatedAt, pinPrice, normCurrency, placeHeading,
   };
 });

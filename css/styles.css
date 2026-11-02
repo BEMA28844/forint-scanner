@@ -52,6 +52,8 @@ main{flex:1;position:relative;overflow:hidden}
 .fuelSearch button{flex:0 0 auto;margin-bottom:8px}
 #fuelSuggest li{cursor:pointer}
 #fuelHint{margin-top:8px}
+#fuelWhere{font-weight:700;margin:2px 0 0}
+#btnFuel.smallbtn{align-self:flex-start;flex:0 0 auto;font-size:.85rem;padding:6px 10px;background:transparent;color:var(--muted)}
 #fuelSources{margin-top:4px}
 #fuelSources a,#fuelInfo a,#fuelList a,#fuelCard a{color:var(--accent2)}
 #fuelMap{height:46vh;min-height:240px;border-radius:14px;margin:8px 0;background:#0c120f}

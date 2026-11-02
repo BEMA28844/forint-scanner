@@ -71,9 +71,9 @@
         </label>
         <button id="btnFuelSearch" class="primary" type="button">Suchen</button>
       </div>
-      <button id="btnFuelLast" class="secondary hidden" type="button">Zuletzt verwendeten Ort laden</button>
-      <button id="btnFuel" class="secondary" type="button">📍 Standort erneut versuchen</button>
+      <button id="btnFuel" class="smallbtn" type="button">Standort verwenden</button>
     </div>
+    <p id="fuelWhere" class="fuelWhere"></p>
     <p id="fuelInfo" class="small"></p>
     <ul id="fuelSuggest" class="list"></ul>
     <div id="fuelMap" class="hidden" role="region" aria-label="Karte der Tankstellen"></div>
@@ -87,7 +87,7 @@
       <button type="button" id="fcAlt" class="secondary">Andere Karten-App</button>
     </div>
     <ul id="fuelList" class="list"></ul>
-    <p id="fuelHint" class="small">Ohne Standortfreigabe oben Ort oder PLZ suchen. iPhone: Einstellungen › Datenschutz &amp; Sicherheit › Ortungsdienste › Safari-Websites › „Beim Verwenden“.</p>
+    <p id="fuelHint" class="small hidden"></p>
     <p id="fuelSources" class="small"><a href="https://nakordoni.eu" target="_blank" rel="noopener">Preise: nakordoni.eu</a> · <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">Kartendaten: © OpenStreetMap-Mitwirkende</a></p>
   </section>
 

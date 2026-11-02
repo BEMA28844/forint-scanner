@@ -190,7 +190,7 @@
     document.querySelectorAll('#tabs button').forEach(x => x.classList.toggle('active', x === b));
     document.querySelectorAll('.view').forEach(v => v.classList.toggle('active', v.id === 'view-' + b.dataset.view));
     state.paused = b.dataset.view !== 'camera' || state.userPaused;
-    if (b.dataset.view === 'fuel') { refreshFuel(false); setTimeout(() => fuelMap && fuelMap.invalidateSize(), 60); }
+    if (b.dataset.view === 'fuel') { openFuelTab(); setTimeout(() => fuelMap && fuelMap.invalidateSize(), 60); }
   }));
 
   // ---------------- OCR ----------------
@@ -365,14 +365,28 @@
     const v = LS.get('mapsApp', 'apple');
     return v === 'google' ? 'google' : 'apple';
   }
-  function showLastFuel() {
-    const saved = LS.get('fuelPos', null);
-    const btn = $('#btnFuelLast');
-    if (!saved || !Number.isFinite(saved.lat)) { btn.classList.add('hidden'); return; }
-    const label = saved.label || (saved.lat.toFixed(3) + ', ' + saved.lon.toFixed(3));
-    btn.textContent = 'Zuletzt: ' + label;
-    btn.classList.remove('hidden');
+  function showFuelWhere(place) {
+    const el = $('#fuelWhere');
+    if (!el) return;
+    el.textContent = F.placeHeading(place) || '';
   }
+  function saveFuelPlace(loc) {
+    const place = {
+      lat: loc.lat, lon: loc.lon,
+      label: loc.label || '',
+      town: loc.town || '',
+      postcode: loc.postcode || '',
+      country: loc.country || '',
+      query: loc.query || '',
+      ts: Date.now(),
+    };
+    LS.set('fuelPos', place);
+    showFuelWhere(place);
+    const hint = $('#fuelHint');
+    if (hint) hint.classList.add('hidden');
+    return place;
+  }
+  function showLastFuel() { showFuelWhere(LS.get('fuelPos', null)); }
   function kmText(d) { return (Math.round(d * 10) / 10).toFixed(1).replace('.', ',') + ' km'; }
   function whenText(v) { return v ? F.formatUpdatedAt(v) : ''; }
   function priceHtml(p) {
@@ -561,13 +575,16 @@
   }
 
   async function countryFor(loc) {
-    if (loc.country) return loc.country;
+    if (loc.country && loc.town) return loc.country;
     try {
       const j = await nominatimGet(`https://nominatim.openstreetmap.org/reverse?format=jsonv2&addressdetails=1&zoom=14&lat=${loc.lat}&lon=${loc.lon}`);
-      const cc = j && j.address && j.address.country_code ? String(j.address.country_code).toUpperCase() : '';
-      const town = j && (j.name || (j.address && (j.address.city || j.address.town || j.address.village)) || '');
-      if (cc) loc.country = cc;
-      if (town && (!loc.label || loc.label === 'Aktueller Standort')) loc.label = town + (cc ? ' (' + cc + ')' : '');
+      const a = (j && j.address) || {};
+      const cc = a.country_code ? String(a.country_code).toUpperCase() : '';
+      const town = a.city || a.town || a.village || a.municipality || (j && j.name) || '';
+      if (cc && !loc.country) loc.country = cc;
+      if (town && !loc.town) loc.town = town;
+      if (a.postcode && !loc.postcode) loc.postcode = String(a.postcode);
+      if (town && (!loc.label || loc.label === 'Aktueller Standort')) loc.label = town;
     } catch (e) { /* Land unbekannt, Preise dann nur mit Schlüssel-Diensten */ }
     return loc.country || '';
   }
@@ -628,11 +645,10 @@
       if (!s.quote) s.quote = { source: 'nakordoni.eu', petrol: s.petrol, e10: s.e10, diesel: s.diesel, extras: s.extras };
       return s;
     });
-    const place = loc.label ? loc.label + ' · ' : '';
-    LS.set('fuelPos', { lat: loc.lat, lon: loc.lon, label: loc.label || '', country: loc.country || (stations[0] && stations[0].country) || '', ts: Date.now() });
-    showLastFuel();
+    if (!loc.country && stations[0] && stations[0].country) loc.country = stations[0].country;
+    saveFuelPlace(loc);
     renderFuelMap(loc, stations);
-    renderFuel(stations, esc((prefix || '') + place) + stations.length + ' Tankstellen mit Preisen. ' + nakoCredit(parsed));
+    renderFuel(stations, stations.length + ' Tankstellen mit Preisen. ' + nakoCredit(parsed));
   }
   async function loadFuelAt(loc, seq, prefix) {
     const info = $('#fuelInfo');
@@ -665,13 +681,13 @@
       }
       if (seq !== fuelSeq) return;
       let stations = F.nearestFuelStations(elements, loc, 10, 5).map(s => ({ ...s, quote: null }));
-      const place = loc.label ? loc.label + ' · ' : '';
+      saveFuelPlace(loc);
       renderFuelMap(loc, stations);
-      renderFuel(stations, esc((prefix || '') + place) + stations.length + ' nächste Tankstellen im Umkreis von 10 km. Preise werden geladen…');
+      renderFuel(stations, stations.length + ' nächste Tankstellen im Umkreis von 10 km. Preise werden geladen…');
       const country = await countryP;
       if (seq !== fuelSeq) return;
-      LS.set('fuelPos', { lat: loc.lat, lon: loc.lon, label: loc.label || '', country: country || '', ts: Date.now() });
-      showLastFuel();
+      if (country && !loc.country) loc.country = country;
+      saveFuelPlace(loc);
       const quotes = [];
       const warnings = [];
       const jobs = [];
@@ -694,7 +710,7 @@
       const matched = F.matchPrices(stations, quotes, 0.35);
       LS.set('fuelCache', { v: 2, ts: Date.now(), loc, stations: matched });
       const priced = matched.filter(s => s.quote).length;
-      const bits = [(prefix || '') + place + matched.length + ' nächste Tankstellen im Umkreis von 10 km.'];
+      const bits = [matched.length + ' nächste Tankstellen im Umkreis von 10 km.'];
       if (priced) bits.push(priced + ' mit Kassenpreis.');
       else bits.push('Kein Kassenpreis zugeordnet.');
       if (nakoInfo) bits.push(nakoInfo);
@@ -707,33 +723,52 @@
     }
   }
 
-  async function refreshFuel(force) {
-    const seq = ++fuelSeq;
-    showLastFuel();
+  function savedFuelPlace() {
+    const saved = LS.get('fuelPos', null);
+    return saved && Number.isFinite(Number(saved.lat)) && Number.isFinite(Number(saved.lon)) ? saved : null;
+  }
+  function openFuelTab() {
+    const saved = savedFuelPlace();
     $('#fuelSuggest').innerHTML = '';
-    $('#fuelInfo').textContent = 'Standort wird ermittelt…';
+    if (saved) {
+      showFuelWhere(saved);
+      const hint = $('#fuelHint');
+      if (hint) hint.classList.add('hidden');
+      loadFuelAt(saved, ++fuelSeq);
+      return;
+    }
+    showFuelWhere(null);
+    useDeviceLocation(false);
+  }
+  function useDeviceLocation(fromButton) {
+    const seq = ++fuelSeq;
+    const hadPlace = !!savedFuelPlace();
+    $('#fuelSuggest').innerHTML = '';
+    if (!hadPlace) $('#fuelInfo').textContent = 'Standort wird ermittelt…';
     // getCurrentPosition noch im Klick (vor dem ersten await) anstoßen, sonst zeigt iOS keinen Dialog.
     const posP = Promise.race([
-      getPos({ timeout: 12000, maximumAge: force ? 0 : 300000 }),
+      getPos({ timeout: 12000, maximumAge: fromButton ? 0 : 300000 }),
       new Promise((_, rej) => setTimeout(() => rej(new Error('Standort-Zeitüberschreitung')), 13500)),
     ]);
-    try {
-      const pos = await posP;
+    posP.then(async (pos) => {
       if (seq !== fuelSeq) return;
-      const saved = LS.get('fuelPos', null);
-      const near = saved && distKm(pos, saved) < 0.4;
-      await loadFuelAt({ lat: pos.lat, lon: pos.lon, label: near && saved.label ? saved.label : 'Aktueller Standort', country: near && saved.country ? saved.country : '' }, seq);
-    } catch (e) {
+      const loc = { lat: pos.lat, lon: pos.lon, label: '' };
+      await countryFor(loc);
       if (seq !== fuelSeq) return;
-      const saved = LS.get('fuelPos', null);
-      if (saved && Number.isFinite(saved.lat)) {
-        await loadFuelAt(saved, seq, e.message + '. Zuletzt verwendeter Ort. ');
-      } else {
-        $('#fuelInfo').textContent = (e.message || 'Standort nicht verfügbar') + '. Ort oder PLZ oben suchen – die Karte braucht keine Standortfreigabe.';
-        $('#fuelList').innerHTML = '';
-        $('#fuelCard').classList.add('hidden');
+      saveFuelPlace(loc);
+      await loadFuelAt(loc, seq);
+    }).catch(() => {
+      if (seq !== fuelSeq) return;
+      if (hadPlace) return;
+      $('#fuelInfo').textContent = '';
+      $('#fuelList').innerHTML = '';
+      $('#fuelCard').classList.add('hidden');
+      const hint = $('#fuelHint');
+      if (hint) {
+        hint.textContent = 'Ort oder PLZ eingeben – die App merkt sich den Ort.';
+        hint.classList.remove('hidden');
       }
-    }
+    });
   }
   async function geocodeFuel(query) {
     const bias = LS.get('fuelPos', null);
@@ -764,8 +799,13 @@
       }
       const use = (p) => {
         $('#fuelSuggest').innerHTML = '';
-        $('#fuelPlace').value = p.label;
-        loadFuelAt({ lat: p.lat, lon: p.lon, label: p.label, country: p.country || '' }, ++fuelSeq);
+        const loc = {
+          lat: p.lat, lon: p.lon, label: p.label || '', country: p.country || '',
+          town: p.town || '', postcode: p.postcode || '', query,
+        };
+        saveFuelPlace(loc);
+        $('#fuelPlace').value = query;
+        loadFuelAt(loc, ++fuelSeq);
       };
       const best = F.bestPlace(places, LS.get('fuelPos', null));
       if (autoPick || places.length === 1) { use(best); return; }
@@ -780,15 +820,8 @@
       if (btn) btn.addEventListener('click', () => searchFuelPlace(query, true));
     }
   }
-  $('#btnFuel').addEventListener('click', () => refreshFuel(true));
+  $('#btnFuel').addEventListener('click', () => useDeviceLocation(true));
   $('#btnFuelSearch').addEventListener('click', () => searchFuelPlace(null, true));
-  $('#btnFuelLast').addEventListener('click', () => {
-    const saved = LS.get('fuelPos', null);
-    if (!saved) return;
-    const seq = ++fuelSeq;
-    $('#fuelPlace').value = saved.label || '';
-    loadFuelAt(saved, seq);
-  });
   $('#fuelPlace').addEventListener('input', () => {
     clearTimeout(fuelGeoTimer);
     const q = $('#fuelPlace').value.trim();
