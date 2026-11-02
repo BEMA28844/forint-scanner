@@ -136,6 +136,7 @@
   <form method="dialog" id="saveForm">
     <h3>Preis merken</h3>
     <label>Artikel <input id="svName" list="articleList" placeholder="z. B. Túró Rudi" autocomplete="off"></label>
+    <div id="svHu" class="small hu-orig"></div>
     <div id="svLast" class="small hint"></div>
     <div class="row">
       <label>Preis (Ft) <input id="svHuf" type="number" inputmode="numeric" min="0" step="1"></label>
@@ -174,6 +175,7 @@
       </select>
     </label>
     <label class="check"><input id="setOcrText" type="checkbox"> Artikelnamen im Bild erkennen (langsamer)</label>
+    <label class="check"><input id="setTranslate" type="checkbox"> Kassenbon automatisch übersetzen</label>
     <p class="small">Alle Daten bleiben nur auf diesem Gerät gespeichert.</p>
     <button type="button" id="btnSetupLink" class="secondary">Einrichtungs-Link für Familie kopieren</button>
     <div class="dlgActions">
@@ -197,6 +199,7 @@
 
 <script src="vendor/tesseract/tesseract.min.js"></script>
 <script src="js/parse.js"></script>
+<script src="js/hu-de.js"></script>
 <script src="js/fuel.js"></script>
 <script src="js/setup.js"></script>
 <script src="vendor/leaflet/leaflet.js"></script>

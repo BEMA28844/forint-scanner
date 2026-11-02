@@ -275,7 +275,7 @@
             const stable = Object.entries(counts).find(([v, n]) => n >= 2 || (p && p.explicit && Number(v) === p.value));
             if (stable) { shown = Number(stable[0]); shownAt = Date.now(); }
             frameNo++;
-            if (LS.get('ocrText', false) && state.scans.length && frameNo % 3 === 0) matchArticle(c);
+            if (LS.get('ocrText', false) && frameNo % 3 === 0) matchArticle(c);
           }
         } catch (e) { console.warn('OCR', e); }
         renderOverlay();
@@ -294,6 +294,7 @@
       const txt = ' ' + P.normName(data.text) + ' ';
       const keys = [...new Set(state.scans.map(s => s.key))].filter(k => k.length >= 4);
       const hit = keys.find(k => txt.includes(' ' + k + ' ')) || keys.find(k => k.split(' ').filter(t => t.length >= 4).every(t => txt.includes(t)) && k.split(' ').some(t => t.length >= 4));
+      state.labelOcr = data.text || '';
       if (hit) { matched = state.scans.find(s => s.key === hit); matchedAt = Date.now(); }
     } catch (e) { console.warn(e); }
   }
@@ -336,7 +337,18 @@
   }
   function openSave(huf) {
     $('#svHuf').value = huf || '';
-    $('#svName').value = matched && Date.now() - matchedAt < 8000 ? matched.name : '';
+    const remembered = matched && Date.now() - matchedAt < 8000 ? matched.name : '';
+    const fromOcr = !remembered && state.labelOcr ? scanNameFromOcr(state.labelOcr) : '';
+    const src = remembered || fromOcr || '';
+    const tr = src && wantTranslate() ? window.ForintHuDe.translateLine(src) : null;
+    if (tr && tr.de && tr.complete && window.ForintHuDe.fold(tr.de) !== window.ForintHuDe.fold(src)) {
+      $('#svName').value = tr.de;
+      $('#svHu').textContent = src;
+    } else {
+      $('#svName').value = remembered || src;
+      $('#svHu').textContent = '';
+      if (tr && !tr.complete && src) fillScanTranslation(src);
+    }
     $('#svMarket').value = LS.get('fixedMarket', '') || state.market || '';
     updSaveDlg();
     dlg.showModal();
@@ -859,6 +871,77 @@
   });
   showLastFuel();
 
+  function wantTranslate() { return LS.get('translateReceipt', true) !== false; }
+  function scanNameFromOcr(text) {
+    const H = window.ForintHuDe;
+    const lines = String(text || '').split(/\n/).map(s => s.trim()).filter(s => /[A-Za-zÁÉÍÓÖŐÚÜŰáéíóöőúüű]{3}/.test(s));
+    let best = '', score = 0;
+    lines.forEach(l => {
+      const t = H.translateLine(l);
+      if (t.coverage > score) { score = t.coverage; best = l; }
+    });
+    return score >= 0.5 ? best : '';
+  }
+  async function fillScanTranslation(src) {
+    const done = await translateNames([src]);
+    if (!done[0] || window.ForintHuDe.fold(done[0].de) === window.ForintHuDe.fold(src)) return;
+    if ($('#svName').value.trim() === src || $('#svName').value.trim() === '') {
+      $('#svName').value = done[0].de;
+      $('#svHu').textContent = src;
+    }
+  }
+  async function translateNames(names) {
+    const H = window.ForintHuDe;
+    const cache = LS.get('huDeCache', {});
+    const results = names.map(name => {
+      const key = H.fold(name);
+      if (cache[key]) return { de: cache[key], hu: name, via: 'cache', key };
+      const off = H.translateLine(name);
+      if (off.complete) return { de: off.de, hu: name, via: 'offline', key };
+      return { de: off.de, hu: name, via: 'partial', key };
+    });
+    const pending = results.map((r, i) => ({ ...r, i })).filter(r => r.via === 'partial');
+    if (wantTranslate() && pending.length && navigator.onLine !== false) {
+      let buf = [], len = 0;
+      const chunks = [];
+      pending.forEach(p => {
+        if (buf.length && (buf.length >= 6 || len + p.hu.length > 350)) { chunks.push(buf); buf = []; len = 0; }
+        buf.push(p); len += p.hu.length + 1;
+      });
+      if (buf.length) chunks.push(buf);
+      for (const chunk of chunks) {
+        try {
+          const q = chunk.map(p => p.hu).join('\n');
+          const r = await fetch('https://api.mymemory.translated.net/get?q=' + encodeURIComponent(q) + '&langpair=hu|de');
+          if (!r.ok) continue;
+          const j = await r.json();
+          const text = j && j.responseData && j.responseData.translatedText;
+          if (!text || j.quotaFinished || j.responseStatus !== 200 || /MYMEMORY WARNING|QUERY LENGTH|INVALID LANGUAGE/i.test(text)) continue;
+          const lines = String(text).split(/\n/);
+          if (lines.length !== chunk.length) continue;
+          chunk.forEach((p, i) => {
+            const de = lines[i].trim();
+            if (!de) return;
+            cache[p.key] = de;
+            results[p.i].de = de;
+            results[p.i].via = 'online';
+          });
+        } catch (e) { /* Wörterbuch bleibt */ }
+      }
+      LS.set('huDeCache', cache);
+    }
+    return results;
+  }
+  function applyNameTranslation(input, huEl, tr) {
+    if (!tr) return;
+    const H = window.ForintHuDe;
+    const different = tr.de && H.fold(tr.de) !== H.fold(tr.hu);
+    if (different) {
+      input.value = tr.de;
+      huEl.textContent = tr.hu;
+    } else huEl.textContent = '';
+  }
+
   // ---------------- Kassenbon ----------------
   async function prepReceiptImage(file) {
     const bmp = await createImageBitmap(file, { imageOrientation: 'from-image' }).catch(() => createImageBitmap(file));
@@ -890,15 +973,35 @@
       r.items.forEach(it => addRcRow(it.name, it.huf));
       if (!r.items.length) addRcRow('', '');
       const sum = r.items.reduce((a, b) => a + b.huf, 0);
-      $('#rcTotal').textContent = `${r.items.length} Positionen erkannt, Summe ${P.formatHuf(sum)}` + (r.total ? ` · Bon-Summe laut Beleg ${P.formatHuf(r.total)} (${P.formatEur(hufToEur(r.total))})` : '') + '. Bitte prüfen und korrigieren.';
+      const headers = window.ForintHuDe.headerLabels(data.text);
+      const headerNote = headers.length ? ` · Beleg: ${headers.join(', ')}` : '';
+      $('#rcTotal').textContent = `${r.items.length} Positionen erkannt, Summe ${P.formatHuf(sum)}` + (r.total ? ` · Bon-Summe laut Beleg ${P.formatHuf(r.total)} (${P.formatEur(hufToEur(r.total))})` : '') + headerNote + '. Bitte prüfen und korrigieren.';
       $('#receiptForm').classList.remove('hidden');
       st.textContent = '';
+      if (wantTranslate() && r.items.length) {
+        st.textContent = 'Übersetze Artikel…';
+        const trs = [...$('#rcTable tbody').querySelectorAll('tr')];
+        const translated = await translateNames(r.items.map(it => it.name));
+        translated.forEach((t, i) => {
+          const tr = trs[i];
+          if (!tr) return;
+          applyNameTranslation(tr.querySelector('.n'), tr.querySelector('.hu-orig'), t);
+        });
+        const online = translated.filter(t => t.via === 'online').length;
+        const offline = translated.length - online;
+        st.textContent = online ? `Übersetzt: ${offline} offline, ${online} online (MyMemory).` : 'Übersetzt mit dem Wörterbuch (offline).';
+      }
     } catch (e) { st.textContent = 'Fehler bei der Texterkennung: ' + e.message; }
   }
   function addRcRow(name, huf) {
     const tr = document.createElement('tr');
-    tr.innerHTML = `<td><input type="checkbox" checked></td><td><input class="n" list="articleList"></td><td><input class="h" type="number" inputmode="numeric"></td><td class="e"></td>`;
-    tr.querySelector('.n').value = name; tr.querySelector('.h').value = huf;
+    tr.innerHTML = `<td><input type="checkbox" checked></td><td class="namecell"><input class="n" list="articleList"><div class="hu-orig"></div></td><td><input class="h" type="number" inputmode="numeric"></td><td class="e"></td>`;
+    const off = wantTranslate() ? window.ForintHuDe.translateLine(name) : null;
+    if (off && off.complete && window.ForintHuDe.fold(off.de) !== window.ForintHuDe.fold(name)) {
+      tr.querySelector('.n').value = off.de;
+      tr.querySelector('.hu-orig').textContent = name;
+    } else tr.querySelector('.n').value = name;
+    tr.querySelector('.h').value = huf;
     const upd = () => { const v = parseInt(tr.querySelector('.h').value, 10); tr.querySelector('.e').textContent = v > 0 ? P.formatEur(hufToEur(v)) : ''; };
     tr.querySelector('.h').addEventListener('input', upd); upd();
     $('#rcTable tbody').appendChild(tr);
@@ -929,6 +1032,7 @@
     $('#setTankerKey').value = LS.get('tankerKey', '');
     $('#setMapsApp').value = mapsPref();
     $('#setOcrText').checked = LS.get('ocrText', false);
+    $('#setTranslate').checked = LS.get('translateReceipt', true) !== false;
     setDlg.showModal();
   });
   setDlg.addEventListener('close', () => {
@@ -938,6 +1042,7 @@
     LS.set('tankerKey', $('#setTankerKey').value.trim());
     LS.set('mapsApp', $('#setMapsApp').value === 'google' ? 'google' : 'apple');
     LS.set('ocrText', $('#setOcrText').checked);
+    LS.set('translateReceipt', $('#setTranslate').checked);
     renderRate(); refreshEurs(); detectMarket(true);
     if ($('#view-fuel').classList.contains('active')) {
       const saved = LS.get('fuelPos', null);
