@@ -16,6 +16,17 @@
   };
   // Bei mehrdeutigen Treffern (z. B. PLZ 8360) diese Länder nach vorne sortieren.
   const PREFERRED_COUNTRIES = ['de', 'hu', 'at', 'sk', 'si', 'hr', 'ro', 'cz', 'pl'];
+  const GEO_PRIMARY = 'de,hu,at';
+  const GEO_FALLBACK = 'de,hu,at,sk,si,hr,ro,cz,pl,ch,nl,fr,it';
+  const OVERPASS_FUEL = [
+    'https://overpass-api.de/api/interpreter',
+    'https://overpass.kumi.systems/api/interpreter',
+    'https://overpass.private.coffee/api/interpreter',
+    'https://maps.mail.ru/osm/tools/overpass/api/interpreter',
+    // Die vier darüber sind oft in der Warteschlange oder antworten mit 502. Dieser Spiegel
+    // liefert dieselbe schlanke Abfrage in der Regel innerhalb einer Sekunde.
+    'https://overpass.openstreetmap.fr/api/interpreter',
+  ];
 
   function distKm(a, b) {
     const R = 6371, toR = x => x * Math.PI / 180;
@@ -104,8 +115,11 @@
       const message = (err && (err.message || err.code)) || json.message || 'nakordoni-Fehler';
       return { ok: false, error: String(message), stations: [] };
     }
-    const data = json.data && typeof json.data === 'object' ? json.data : {};
-    let list = data.stations || data.data || json.stations || [];
+    const data = json.data;
+    let list = [];
+    if (Array.isArray(data)) list = data;
+    else if (data && typeof data === 'object') list = data.stations || data.data || data.results || [];
+    else if (Array.isArray(json.stations)) list = json.stations;
     if (!Array.isArray(list)) list = [];
     const stations = [];
     list.forEach(s => {
@@ -124,7 +138,7 @@
         sourceUrl: 'https://nakordoni.eu/',
       });
     });
-    return { ok: true, stations };
+    return { ok: true, stations, rows: list.length };
   }
 
   function parseTankerkoenig(json) {
@@ -249,6 +263,32 @@
     })).filter(p => p.lat != null && p.lon != null));
   }
 
+  function nominatimSearchUrl(q, opts) {
+    opts = opts || {};
+    const p = ['format=jsonv2', 'addressdetails=1', 'limit=5', 'q=' + encodeURIComponent(q)];
+    if (opts.countrycodes) p.push('countrycodes=' + opts.countrycodes);
+    if (opts.bias && opts.bias.lat != null && opts.bias.lon != null) {
+      const d = 0.6, lat = Number(opts.bias.lat), lon = Number(opts.bias.lon);
+      p.push('viewbox=' + [lon - d, lat + d, lon + d, lat - d].join(','));
+      p.push('bounded=0');
+    }
+    return 'https://nominatim.openstreetmap.org/search?' + p.join('&');
+  }
+
+  function overpassFuelQuery(lat, lon) {
+    const la = Number(lat).toFixed(6), lo = Number(lon).toFixed(6);
+    return '[out:json][timeout:8];(node(around:10000,' + la + ',' + lo + ')[amenity=fuel];way(around:10000,' + la + ',' + lo + ')[amenity=fuel];);out center 50;';
+  }
+
+  function bestPlace(list, bias) {
+    const ranked = rankPlaces(list || []);
+    if (!ranked.length) return null;
+    const home = ranked.filter(p => ['DE', 'HU', 'AT'].includes(String(p.country || '').toUpperCase()));
+    const pool = home.length ? home : ranked;
+    if (!bias || bias.lat == null || bias.lon == null) return pool[0];
+    return pool.slice().sort((a, b) => distKm(bias, a) - distKm(bias, b))[0];
+  }
+
   function mapsUrl(app, lat, lon) {
     const la = Number(lat).toFixed(6), lo = Number(lon).toFixed(6);
     if (app === 'apple') return 'https://maps.apple.com/?daddr=' + la + ',' + lo + '&dirflg=d';
@@ -256,8 +296,9 @@
   }
 
   return {
-    LIVE_STATION_COUNTRIES, WEEKLY_SLUG, PREFERRED_COUNTRIES,
+    LIVE_STATION_COUNTRIES, WEEKLY_SLUG, PREFERRED_COUNTRIES, GEO_PRIMARY, GEO_FALLBACK, OVERPASS_FUEL,
     distKm, nearestFuelStations, parseNakordoniFuel, parseTankerkoenig, parseFuelPricesStations,
-    parseWeeklyAverage, matchPrices, rankPlaces, parseNominatimSearch, mapsUrl, isPlaceholderQuote,
+    parseWeeklyAverage, matchPrices, rankPlaces, parseNominatimSearch, nominatimSearchUrl, overpassFuelQuery,
+    bestPlace, mapsUrl, isPlaceholderQuote,
   };
 });

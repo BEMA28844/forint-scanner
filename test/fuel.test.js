@@ -164,6 +164,48 @@ t('nominatim search parse', () => {
   assert.strictEqual(list[0].lat, 46.76);
 });
 
+t('bestPlace picks Weyhe over the Italian 28844', () => {
+  const p = F.bestPlace([
+    { lat: 45.98, lon: 8.26, label: '28844, Villadossola, Italien', country: 'IT' },
+    { lat: 52.988728, lon: 8.850828, label: '28844, Kirchweyhe, Weyhe, Deutschland', country: 'DE' },
+  ]);
+  assert.strictEqual(p.country, 'DE');
+  assert.ok(p.label.includes('Weyhe'));
+});
+
+t('bestPlace biases toward the last location inside de/hu/at', () => {
+  const list = [
+    { lat: 47.5, lon: 19.0, label: 'Budapest', country: 'HU' },
+    { lat: 52.99, lon: 8.85, label: 'Weyhe', country: 'DE' },
+    { lat: 45.9, lon: 8.2, label: 'Italien', country: 'IT' },
+  ];
+  assert.strictEqual(F.bestPlace(list, { lat: 47.4, lon: 19.1 }).label, 'Budapest');
+  assert.strictEqual(F.bestPlace(list, { lat: 53, lon: 9 }).label, 'Weyhe');
+  assert.notStrictEqual(F.bestPlace(list, null).country, 'IT');
+});
+
+t('nominatim url prefers de,hu,at and biases', () => {
+  const u = F.nominatimSearchUrl('28844', { countrycodes: F.GEO_PRIMARY, bias: { lat: 47, lon: 19 } });
+  assert.ok(u.includes('countrycodes=de%2Chu%2Cat') || u.includes('countrycodes=de,hu,at'));
+  assert.ok(u.includes('q=28844'));
+  assert.ok(u.includes('viewbox='));
+  assert.ok(u.includes('bounded=0'));
+  assert.strictEqual(F.GEO_PRIMARY, 'de,hu,at');
+});
+
+t('overpass fuel query is lean', () => {
+  const q = F.overpassFuelQuery(52.9887284, 8.850828);
+  assert.ok(q.includes('node(around:10000,52.988728,8.850828)[amenity=fuel]'));
+  assert.ok(q.includes('way(around:10000,52.988728,8.850828)[amenity=fuel]'));
+  assert.ok(q.includes('out center 50'));
+  assert.ok(!/relation/.test(q));
+  assert.ok(F.OVERPASS_FUEL[0].includes('overpass-api.de'));
+  assert.ok(F.OVERPASS_FUEL[1].includes('kumi.systems'));
+  assert.ok(F.OVERPASS_FUEL[2].includes('private.coffee'));
+  assert.ok(F.OVERPASS_FUEL[3].includes('maps.mail.ru'));
+  assert.ok(F.OVERPASS_FUEL[F.OVERPASS_FUEL.length - 1].includes('openstreetmap.fr'));
+});
+
 t('maps urls', () => {
   assert.strictEqual(F.mapsUrl('apple', 46.767508, 17.24628), 'https://maps.apple.com/?daddr=46.767508,17.246280&dirflg=d');
   assert.strictEqual(F.mapsUrl('google', 52.5, 13.4), 'https://www.google.com/maps/dir/?api=1&destination=52.500000,13.400000&travelmode=driving');

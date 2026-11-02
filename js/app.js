@@ -83,16 +83,6 @@
     const h = Math.sin(dLat / 2) ** 2 + Math.cos(toR(a.lat)) * Math.cos(toR(b.lat)) * Math.sin(dLon / 2) ** 2;
     return 2 * R * Math.asin(Math.sqrt(h));
   }
-  // Ein Server nach dem anderen: schwere Tankstellen-Abfragen nicht parallel auf fünf Endpunkte legen.
-  async function overpassSeq(q) {
-    let last = new Error('Kartendienst (OpenStreetMap) gerade nicht erreichbar');
-    for (const url of OVERPASS) {
-      try {
-        return await fetchJson(url, { method: 'POST', body: 'data=' + encodeURIComponent(q), headers: { 'Content-Type': 'application/x-www-form-urlencoded' } }, 50000);
-      } catch (e) { last = e; }
-    }
-    throw last;
-  }
   // Fragt mehrere öffentliche Overpass-Server parallel (gestaffelt) ab, der schnellste gewinnt
   function overpass(q, timeoutMs = 30000) {
     return new Promise((resolve, reject) => {
@@ -200,7 +190,7 @@
     document.querySelectorAll('#tabs button').forEach(x => x.classList.toggle('active', x === b));
     document.querySelectorAll('.view').forEach(v => v.classList.toggle('active', v.id === 'view-' + b.dataset.view));
     state.paused = b.dataset.view !== 'camera' || state.userPaused;
-    if (b.dataset.view === 'fuel') refreshFuel(false);
+    if (b.dataset.view === 'fuel') { refreshFuel(false); setTimeout(() => fuelMap && fuelMap.invalidateSize(), 60); }
   }));
 
   // ---------------- OCR ----------------
@@ -436,11 +426,11 @@
   $('#routeGoogle').addEventListener('click', () => chooseRoute('google'));
   $('#routeCancel').addEventListener('click', () => { if ($('#routeDlg').open) $('#routeDlg').close(); });
 
-  async function fetchJsonSoft(url, timeoutMs = 20000) {
+  async function fetchJsonSoft(url, timeoutMs = 20000, headers) {
     const ctrl = new AbortController();
     const to = setTimeout(() => ctrl.abort(), timeoutMs);
     try {
-      const r = await fetch(url, { signal: ctrl.signal, referrerPolicy: 'origin', headers: { Accept: 'application/json' } });
+      const r = await fetch(url, { signal: ctrl.signal, referrerPolicy: 'origin', headers: Object.assign({ Accept: 'application/json' }, headers || {}) });
       const json = await r.json().catch(() => null);
       return { http: r.status, json };
     } catch (e) {
@@ -464,24 +454,92 @@
     } finally { clearTimeout(to); }
   }
 
+  let fuelMap = null, fuelLayer = null, fuelHere = null, fuelCardStation = null;
+  function ensureFuelMap() {
+    const el = $('#fuelMap');
+    el.classList.remove('hidden');
+    if (fuelMap || !window.L) { if (fuelMap) setTimeout(() => fuelMap.invalidateSize(), 40); return fuelMap; }
+    fuelMap = L.map(el, { zoomControl: true });
+    L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
+      maxZoom: 19,
+      attribution: '&copy; <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap-Mitwirkende</a>',
+    }).addTo(fuelMap);
+    fuelMap.setView([51.2, 10.4], 6);
+    setTimeout(() => fuelMap.invalidateSize(), 60);
+    return fuelMap;
+  }
+  function renderFuelMap(loc, stations) {
+    const map = ensureFuelMap();
+    if (!map || !loc) return;
+    if (fuelLayer) map.removeLayer(fuelLayer);
+    if (fuelHere) map.removeLayer(fuelHere);
+    fuelLayer = L.layerGroup().addTo(map);
+    fuelHere = L.circleMarker([loc.lat, loc.lon], { radius: 8, color: '#eef5f1', weight: 2, fillColor: '#2fbf71', fillOpacity: 1 })
+      .addTo(map).bindTooltip('Standort');
+    const bounds = [[loc.lat, loc.lon]];
+    stations.forEach((s, i) => {
+      const marker = L.marker([s.lat, s.lon], {
+        title: s.name,
+        icon: L.divIcon({ className: 'fuel-pin-wrap', html: '<div class="fuel-pin">' + (i + 1) + '</div>', iconSize: [34, 34], iconAnchor: [17, 17] }),
+      });
+      marker.on('click', () => showFuelCard(s, i));
+      marker.addTo(fuelLayer);
+      bounds.push([s.lat, s.lon]);
+    });
+    if (stations.length) map.fitBounds(bounds, { padding: [28, 28], maxZoom: 14 });
+    else map.setView([loc.lat, loc.lon], 13);
+    setTimeout(() => map.invalidateSize(), 80);
+  }
+  function quoteMeta(q) {
+    if (!q) return '';
+    const updated = (q.petrol && q.petrol.updated) || (q.diesel && q.diesel.updated);
+    const whenLabel = updated ? whenText(updated) : 'abgerufen ' + whenText(Date.now());
+    if (String(q.source || '').toLowerCase().includes('nakordoni')) {
+      return '<a href="https://nakordoni.eu" target="_blank" rel="noopener">Preise: nakordoni.eu</a> · ' + esc(whenLabel);
+    }
+    return 'Quelle: ' + esc(q.source || '') + ' · ' + esc(whenLabel);
+  }
+  function showFuelCard(s, index) {
+    fuelCardStation = s;
+    const q = s.quote;
+    $('#fcName').textContent = (index + 1) + '. ' + (s.name || 'Tankstelle');
+    $('#fcDist').textContent = kmText(s.d);
+    $('#fcAddr').textContent = s.address || '';
+    $('#fcPetrol').innerHTML = 'Benzin 95: ' + priceHtml(q && q.petrol);
+    $('#fcDiesel').innerHTML = 'Diesel: ' + priceHtml(q && q.diesel);
+    $('#fcMeta').innerHTML = quoteMeta(q);
+    const pref = mapsPref();
+    $('#fcRoute').textContent = pref === 'google' ? 'Route in Google Maps' : 'Route in Apple Karten';
+    $('#fcAlt').textContent = pref === 'google' ? 'Stattdessen Apple Karten' : 'Stattdessen Google Maps';
+    $('#fuelCard').classList.remove('hidden');
+    $('#fuelList').querySelectorAll('li').forEach(li => li.classList.toggle('active', Number(li.dataset.i) === index));
+    if (fuelMap) fuelMap.panTo([s.lat, s.lon]);
+  }
+  function openFuelRoute(app) {
+    if (!fuelCardStation) return;
+    openExternal(F.mapsUrl(app, fuelCardStation.lat, fuelCardStation.lon));
+  }
+  $('#fcRoute').addEventListener('click', () => openFuelRoute(mapsPref()));
+  $('#fcAlt').addEventListener('click', () => openFuelRoute(mapsPref() === 'google' ? 'apple' : 'google'));
   function renderFuel(stations, noteHtml) {
     $('#fuelInfo').innerHTML = noteHtml;
-    $('#fuelList').innerHTML = stations.length ? stations.map(s => {
+    $('#fuelList').innerHTML = stations.length ? stations.map((s, i) => {
       const title = esc(s.name) + (s.brand && s.name && s.brand !== s.name ? ' – ' + esc(s.brand) : '');
       const q = s.quote;
-      const fromNako = q && String(q.source || '').toLowerCase().includes('nakordoni');
-      const updated = q && ((q.petrol && q.petrol.updated) || (q.diesel && q.diesel.updated));
-      const whenLabel = !q ? '' : updated ? whenText(updated) : 'abgerufen ' + whenText(Date.now());
-      const meta = !q ? '' : fromNako
-        ? '<a href="https://nakordoni.eu" target="_blank" rel="noopener">Preise: nakordoni.eu</a> · ' + esc(whenLabel)
-        : 'Quelle: ' + esc(q.source) + ' · ' + esc(whenLabel);
-      return `<li><div class="t"><span>⛽ ${title}</span><span>${esc(kmText(s.d))}</span></div>
-        <div class="m">${esc(s.address || '')}${s.opening ? (s.address ? ' · ' : '') + esc(s.opening) : ''}</div>
+      return `<li data-i="${i}"><div class="t"><span>${i + 1}. ⛽ ${title}</span><span>${esc(kmText(s.d))}</span></div>
+        <div class="m">${esc(s.address || '')}</div>
         <div class="fuelprices"><span>Benzin 95: ${priceHtml(q && q.petrol)}</span><span>Diesel: ${priceHtml(q && q.diesel)}</span></div>
-        ${meta ? `<div class="m">${meta}</div>` : ''}
-        <div class="acts"><button type="button" data-route="${stations.indexOf(s)}">Route</button></div></li>`;
+        ${q ? `<div class="m">${quoteMeta(q)}</div>` : ''}</li>`;
     }).join('') : '<li class="small">Keine Tankstelle im Umkreis von 10 km.</li>';
-    $('#fuelList').querySelectorAll('[data-route]').forEach(btn => btn.addEventListener('click', () => openRouteSheet(stations[Number(btn.dataset.route)])));
+    $('#fuelList').querySelectorAll('li[data-i]').forEach(li => li.addEventListener('click', () => showFuelCard(stations[Number(li.dataset.i)], Number(li.dataset.i))));
+  }
+  function showFuelFail(loc, message) {
+    $('#fuelInfo').innerHTML = esc(message) + '<br><button type="button" id="btnFuelRetry" class="secondary">Erneut versuchen</button>';
+    const btn = $('#btnFuelRetry');
+    if (btn) btn.addEventListener('click', () => { const seq = ++fuelSeq; loadFuelAt(loc, seq); });
+    $('#fuelCard').classList.add('hidden');
+    $('#fuelList').innerHTML = '';
+    if (loc) renderFuelMap(loc, []);
   }
   function weeklyHtml(w) {
     if (!w) return '';
@@ -513,72 +571,117 @@
     return loc.country || '';
   }
 
+  async function fetchOverpassFuel(q, onStatus) {
+    const errors = [];
+    for (let i = 0; i < F.OVERPASS_FUEL.length; i++) {
+      const url = F.OVERPASS_FUEL[i];
+      const host = url.split('/')[2];
+      if (onStatus) onStatus('Suche Tankstellen (' + (i + 1) + '/' + F.OVERPASS_FUEL.length + ', ' + host + ')…');
+      const ctrl = new AbortController();
+      const to = setTimeout(() => ctrl.abort(), 10000);
+      try {
+        const r = await fetch(url, {
+          method: 'POST', signal: ctrl.signal,
+          headers: { 'Content-Type': 'application/x-www-form-urlencoded', Accept: 'application/json' },
+          body: 'data=' + encodeURIComponent(q),
+        });
+        if (!r.ok) throw new Error('HTTP ' + r.status);
+        const j = await r.json();
+        if (!j || !Array.isArray(j.elements)) throw new Error('keine Daten');
+        return j;
+      } catch (e) {
+        errors.push(host + ': ' + (e.name === 'AbortError' ? 'Zeitüberschreitung' : e.message));
+      } finally { clearTimeout(to); }
+    }
+    throw new Error(errors.join(' · '));
+  }
+  async function fetchNakordoni(lat, lon, key) {
+    const qs = 'lat=' + encodeURIComponent(lat) + '&lon=' + encodeURIComponent(lon) + '&radius_km=10&limit=20&lang=de';
+    const headers = { Authorization: 'Bearer ' + key };
+    const urls = [
+      'https://nakordoni.eu/api/v2/data/fuel-stations?' + qs,
+      'https://nakordoni.eu/api/v2/data/fuel?mode=nearest&' + qs,
+    ];
+    let last = { http: 0, json: null, error: 'nicht erreichbar' };
+    for (let i = 0; i < urls.length; i++) {
+      last = await fetchJsonSoft(urls[i], 15000, headers);
+      if (last.http && last.http !== 404) break;
+    }
+    const parsed = F.parseNakordoniFuel(last.json || { ok: false, error: { message: last.error || ('HTTP ' + last.http) } });
+    const code = last.json && last.json.error && (last.json.error.code || last.json.error.message);
+    const diag = !parsed.ok
+      ? 'nakordoni: HTTP ' + (last.http || 0) + (code ? ' ' + code : '')
+      : parsed.stations.length
+        ? 'nakordoni: HTTP ' + last.http + ', ' + parsed.stations.length + ' Stationen mit Preis'
+        : 'nakordoni: HTTP ' + last.http + ', ' + (parsed.rows || 0) + ' Einträge, keine Preise';
+    return { parsed, diag };
+  }
   async function loadFuelAt(loc, seq, prefix) {
     const info = $('#fuelInfo');
-    info.textContent = 'Suche die 5 nächsten Tankstellen…';
-    const countryP = countryFor(loc);
-    const lat = Number(loc.lat).toFixed(6), lon = Number(loc.lon).toFixed(6);
-    const q = `[out:json][timeout:25];(node(around:10000,${lat},${lon})[amenity=fuel];way(around:10000,${lat},${lon})[amenity=fuel];);out center tags;`;
-    let elements = null, osmErr = '';
     try {
-      const j = await overpassSeq(q);
-      elements = j.elements || [];
-    } catch (e) { osmErr = e.message; }
-    if (seq !== fuelSeq) return;
-    let stations = elements ? F.nearestFuelStations(elements, loc, 10, 5) : [];
-    if (!elements) {
-      const c = LS.get('fuelCache', null);
-      if (c && c.v === 2 && c.stations) {
-        stations = c.stations;
-        info.textContent = osmErr + ' (gespeicherte Liste vom ' + fmtDate(c.ts) + ')';
-      } else {
-        info.textContent = osmErr || 'Tankstellen konnten nicht geladen werden.';
-        $('#fuelList').innerHTML = '';
+      $('#fuelCard').classList.add('hidden');
+      renderFuelMap(loc, []);
+      const countryP = countryFor(loc);
+      const lat = Number(loc.lat).toFixed(6), lon = Number(loc.lon).toFixed(6);
+      let elements = null;
+      try {
+        const j = await fetchOverpassFuel(F.overpassFuelQuery(loc.lat, loc.lon), (msg) => { if (seq === fuelSeq) info.textContent = (prefix || '') + msg; });
+        elements = j.elements || [];
+      } catch (e) {
+        if (seq !== fuelSeq) return;
+        showFuelFail(loc, (prefix || '') + 'Tankstellen nicht geladen. ' + e.message);
         return;
       }
+      if (seq !== fuelSeq) return;
+      let stations = F.nearestFuelStations(elements, loc, 10, 5).map(s => ({ ...s, quote: null }));
+      const place = loc.label ? loc.label + ' · ' : '';
+      renderFuelMap(loc, stations);
+      renderFuel(stations, esc((prefix || '') + place) + stations.length + ' nächste Tankstellen im Umkreis von 10 km. Preise werden geladen…');
+      const country = await countryP;
+      if (seq !== fuelSeq) return;
+      LS.set('fuelPos', { lat: loc.lat, lon: loc.lon, label: loc.label || '', country: country || '', ts: Date.now() });
+      showLastFuel();
+      const quotes = [];
+      const warnings = [];
+      let nakoInfo = '';
+      const jobs = [];
+      const nako = LS.get('fuelKey', '').trim();
+      const tanker = LS.get('tankerKey', '').trim();
+      const watch = (p) => p.catch(e => warnings.push(e.message || 'Preisquelle fehlgeschlagen'));
+      if (nako) jobs.push(watch(fetchNakordoni(lat, lon, nako).then(res => {
+        nakoInfo = res.diag;
+        if (res.parsed.ok) quotes.push(...res.parsed.stations);
+      })));
+      if (tanker && (!country || country === 'DE')) jobs.push(watch(fetchJsonSoft('https://creativecommons.tankerkoenig.de/json/list.php?lat=' + lat + '&lng=' + lon + '&rad=10&sort=dist&type=all&apikey=' + encodeURIComponent(tanker)).then(r => {
+        const parsed = F.parseTankerkoenig(r.json || { ok: false, message: r.error || ('HTTP ' + r.http) });
+        if (!parsed.ok) warnings.push('Tankerkönig: HTTP ' + (r.http || 0) + ' ' + parsed.error);
+        else { if (parsed.warning) warnings.push('Tankerkönig: ' + parsed.warning); quotes.push(...parsed.stations); }
+      })));
+      if (country && F.LIVE_STATION_COUNTRIES.includes(country)) jobs.push(watch(fetchJsonSoft('https://www.fuel-prices.eu/live/api.php?action=stations&country=' + country + '&lat=' + lat + '&lng=' + lon + '&radius=10&limit=20').then(r => {
+        const parsed = F.parseFuelPricesStations(r.json || { ok: false, error: r.error || ('HTTP ' + r.http) }, Date.now());
+        if (parsed.ok) quotes.push(...parsed.stations);
+      })));
+      let weekly = null;
+      const slug = F.WEEKLY_SLUG[country];
+      if (slug) jobs.push(watch(fetchJsonSoft('https://www.fuel-prices.eu/' + slug + '/?format=json').then(r => { weekly = F.parseWeeklyAverage(r.json); })));
+      await Promise.all(jobs);
+      if (seq !== fuelSeq) return;
+      const matched = F.matchPrices(stations, quotes, 0.35);
+      const assigned = matched.filter(s => s.quote && String(s.quote.source || '').toLowerCase().includes('nakordoni')).length;
+      if (nakoInfo && nakoInfo.indexOf('Stationen mit Preis') !== -1) nakoInfo += ', ' + assigned + ' zugeordnet';
+      LS.set('fuelCache', { v: 2, ts: Date.now(), loc, stations: matched });
+      const priced = matched.filter(s => s.quote).length;
+      const bits = [(prefix || '') + place + matched.length + ' nächste Tankstellen im Umkreis von 10 km.'];
+      if (priced) bits.push(priced + ' mit Kassenpreis.');
+      else bits.push('Kein Kassenpreis zugeordnet.');
+      if (nakoInfo) bits.push(nakoInfo);
+      if (warnings.length) bits.push(warnings.join(' '));
+      renderFuelMap(loc, matched);
+      renderFuel(matched, bits.map(esc).join(' ') + (keyHint(country) ? ' ' + keyHint(country) : '') + (weeklyHtml(weekly) ? '<br>' + weeklyHtml(weekly) : ''));
+    } catch (e) {
+      if (seq !== fuelSeq) return;
+      showFuelFail(loc, e.message || 'Suche fehlgeschlagen');
     }
-    stations = stations.map(s => ({ ...s, quote: null }));
-    const place = loc.label ? loc.label + ' · ' : '';
-    renderFuel(stations, esc((prefix || '') + place) + stations.length + ' nächste Tankstellen im Umkreis von 10 km (OpenStreetMap). Preise werden geladen…');
-    const country = await countryP;
-    if (seq !== fuelSeq) return;
-    LS.set('fuelPos', { lat: loc.lat, lon: loc.lon, label: loc.label || '', country: country || '', ts: Date.now() });
-    showLastFuel();
-    const quotes = [];
-    const warnings = [];
-    const jobs = [];
-    const nako = LS.get('fuelKey', '').trim();
-    const tanker = LS.get('tankerKey', '').trim();
-    const watch = (p) => p.catch(e => warnings.push(e.message || 'Preisquelle fehlgeschlagen'));
-    if (nako) jobs.push(watch(fetchJsonSoft(`https://nakordoni.eu/api/v2/data/fuel?mode=nearest&lat=${lat}&lon=${lon}&radius_km=10&limit=20&lang=de&key=${encodeURIComponent(nako)}`).then(r => {
-      const parsed = F.parseNakordoniFuel(r.json || { ok: false, error: { message: r.error || ('HTTP ' + r.http) } });
-      if (!parsed.ok) warnings.push('nakordoni: ' + parsed.error);
-      else quotes.push(...parsed.stations);
-    })));
-    if (tanker && (!country || country === 'DE')) jobs.push(watch(fetchJsonSoft(`https://creativecommons.tankerkoenig.de/json/list.php?lat=${lat}&lng=${lon}&rad=10&sort=dist&type=all&apikey=${encodeURIComponent(tanker)}`).then(r => {
-      const parsed = F.parseTankerkoenig(r.json || { ok: false, message: r.error || ('HTTP ' + r.http) });
-      if (!parsed.ok) warnings.push('Tankerkönig: ' + parsed.error);
-      else { if (parsed.warning) warnings.push('Tankerkönig: ' + parsed.warning); quotes.push(...parsed.stations); }
-    })));
-    if (country && F.LIVE_STATION_COUNTRIES.includes(country)) jobs.push(watch(fetchJsonSoft(`https://www.fuel-prices.eu/live/api.php?action=stations&country=${country}&lat=${lat}&lng=${lon}&radius=10&limit=20`).then(r => {
-      const parsed = F.parseFuelPricesStations(r.json || { ok: false, error: r.error || ('HTTP ' + r.http) }, Date.now());
-      if (parsed.ok) quotes.push(...parsed.stations);
-    })));
-    let weekly = null;
-    const slug = F.WEEKLY_SLUG[country];
-    if (slug) jobs.push(watch(fetchJsonSoft('https://www.fuel-prices.eu/' + slug + '/?format=json').then(r => { weekly = F.parseWeeklyAverage(r.json); })));
-    await Promise.all(jobs);
-    if (seq !== fuelSeq) return;
-    const matched = F.matchPrices(stations, quotes, 0.35);
-    LS.set('fuelCache', { v: 2, ts: Date.now(), loc, stations: matched });
-    const priced = matched.filter(s => s.quote).length;
-    const bits = [(prefix || '') + place + matched.length + ' nächste Tankstellen im Umkreis von 10 km (OpenStreetMap).'];
-    if (priced) bits.push(priced + ' mit Kassenpreis.');
-    else bits.push('Kein Kassenpreis zugeordnet.');
-    if (warnings.length) bits.push(warnings.join(' '));
-    const hint = keyHint(country);
-    const weeklyLine = weeklyHtml(weekly);
-    renderFuel(matched, bits.map(esc).join(' ') + (hint ? ' ' + hint : '') + (weeklyLine ? '<br>' + weeklyLine : ''));
   }
 
   async function refreshFuel(force) {
@@ -603,37 +706,59 @@
       if (saved && Number.isFinite(saved.lat)) {
         await loadFuelAt(saved, seq, e.message + '. Zuletzt verwendeter Ort. ');
       } else {
-        $('#fuelInfo').innerHTML = why + '. Ort oder PLZ oben suchen – die Liste braucht keine Standortfreigabe.';
+        $('#fuelInfo').textContent = (e.message || 'Standort nicht verfügbar') + '. Ort oder PLZ oben suchen – die Karte braucht keine Standortfreigabe.';
         $('#fuelList').innerHTML = '';
+        $('#fuelCard').classList.add('hidden');
       }
     }
   }
-  async function searchFuelPlace(q) {
+  async function geocodeFuel(query) {
+    const bias = LS.get('fuelPos', null);
+    const tiers = [
+      { countrycodes: F.GEO_PRIMARY, bias },
+      { countrycodes: F.GEO_FALLBACK, bias },
+      { bias },
+    ];
+    for (let i = 0; i < tiers.length; i++) {
+      const arr = await nominatimGet(F.nominatimSearchUrl(query, tiers[i]));
+      const places = F.parseNominatimSearch(arr);
+      if (places.length) return places;
+    }
+    return [];
+  }
+  async function searchFuelPlace(q, autoPick) {
     const query = (q != null ? q : $('#fuelPlace').value).trim();
     if (query.length < 2) { $('#fuelSuggest').innerHTML = ''; return; }
     const seq = ++fuelSeq;
+    $('#fuelInfo').textContent = 'Ort wird gesucht…';
     try {
-      const arr = await nominatimGet('https://nominatim.openstreetmap.org/search?format=jsonv2&addressdetails=1&limit=5&q=' + encodeURIComponent(query));
+      const places = await geocodeFuel(query);
       if (seq !== fuelSeq) return;
-      const places = F.parseNominatimSearch(arr);
-      if (!places.length) { $('#fuelSuggest').innerHTML = '<li class="small">Kein Ort gefunden.</li>'; return; }
+      if (!places.length) {
+        $('#fuelSuggest').innerHTML = '<li class="small">Kein Ort gefunden.</li>';
+        $('#fuelInfo').textContent = 'Kein Ort gefunden. Andere Schreibweise versuchen.';
+        return;
+      }
       const use = (p) => {
         $('#fuelSuggest').innerHTML = '';
         $('#fuelPlace').value = p.label;
-        const seq2 = ++fuelSeq;
-        loadFuelAt({ lat: p.lat, lon: p.lon, label: p.label, country: p.country || '' }, seq2);
+        loadFuelAt({ lat: p.lat, lon: p.lon, label: p.label, country: p.country || '' }, ++fuelSeq);
       };
-      if (places.length === 1) { use(places[0]); return; }
-      $('#fuelSuggest').innerHTML = places.map((p, i) => `<li data-i="${i}">${esc(p.label)}</li>`).join('');
-      $('#fuelSuggest').querySelectorAll('li').forEach(li => li.addEventListener('click', () => use(places[Number(li.dataset.i)])));
-      $('#fuelInfo').textContent = 'Mehrere Treffer – einen antippen.';
+      const best = F.bestPlace(places, LS.get('fuelPos', null));
+      if (autoPick || places.length === 1) { use(best); return; }
+      const ordered = [best].concat(places.filter(p => p !== best));
+      $('#fuelSuggest').innerHTML = ordered.map((p, i) => `<li data-i="${i}">${esc(p.label)}</li>`).join('');
+      $('#fuelSuggest').querySelectorAll('li').forEach(li => li.addEventListener('click', () => use(ordered[Number(li.dataset.i)])));
+      $('#fuelInfo').textContent = 'Mehrere Treffer – einen antippen oder Suchen für den besten Treffer.';
     } catch (e) {
       if (seq !== fuelSeq) return;
-      $('#fuelInfo').textContent = e.message || 'Ortssuche fehlgeschlagen';
+      $('#fuelInfo').innerHTML = esc(e.message || 'Ortssuche fehlgeschlagen') + '<br><button type="button" id="btnFuelRetry" class="secondary">Erneut versuchen</button>';
+      const btn = $('#btnFuelRetry');
+      if (btn) btn.addEventListener('click', () => searchFuelPlace(query, true));
     }
   }
   $('#btnFuel').addEventListener('click', () => refreshFuel(true));
-  $('#btnFuelSearch').addEventListener('click', () => searchFuelPlace());
+  $('#btnFuelSearch').addEventListener('click', () => searchFuelPlace(null, true));
   $('#btnFuelLast').addEventListener('click', () => {
     const saved = LS.get('fuelPos', null);
     if (!saved) return;
@@ -648,7 +773,7 @@
     fuelGeoTimer = setTimeout(() => searchFuelPlace(q), 800);
   });
   $('#fuelPlace').addEventListener('keydown', (e) => {
-    if (e.key === 'Enter') { e.preventDefault(); clearTimeout(fuelGeoTimer); searchFuelPlace(); }
+    if (e.key === 'Enter') { e.preventDefault(); clearTimeout(fuelGeoTimer); searchFuelPlace(null, true); }
   });
   showLastFuel();
 

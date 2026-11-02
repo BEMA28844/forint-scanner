@@ -13,6 +13,7 @@
 <link rel="apple-touch-icon" href="icons/icon-180.png">
 <link rel="icon" href="icons/icon-192.png">
 <link rel="stylesheet" href="css/styles.css">
+<link rel="stylesheet" href="vendor/leaflet/leaflet.css">
 </head>
 <body>
 <header id="topbar">
@@ -74,6 +75,15 @@
     </div>
     <p id="fuelInfo" class="small"></p>
     <ul id="fuelSuggest" class="list"></ul>
+    <div id="fuelMap" class="hidden" role="region" aria-label="Karte der Tankstellen"></div>
+    <div id="fuelCard" class="hidden">
+      <div class="t"><span id="fcName"></span><span id="fcDist"></span></div>
+      <div id="fcAddr" class="m"></div>
+      <div class="fuelprices"><span id="fcPetrol"></span><span id="fcDiesel"></span></div>
+      <div id="fcMeta" class="m"></div>
+      <button type="button" id="fcRoute" class="primary big">Route</button>
+      <button type="button" id="fcAlt" class="secondary">Andere Karten-App</button>
+    </div>
     <ul id="fuelList" class="list"></ul>
     <p id="fuelHint" class="small">Ohne Standortfreigabe oben Ort oder PLZ suchen. iPhone: Einstellungen › Datenschutz &amp; Sicherheit › Ortungsdienste › Safari-Websites › „Beim Verwenden“.</p>
     <p id="fuelSources" class="small"><a href="https://nakordoni.eu" target="_blank" rel="noopener">Preise: nakordoni.eu</a> · <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">Kartendaten: © OpenStreetMap-Mitwirkende</a></p>
@@ -185,6 +195,7 @@
 <script src="vendor/tesseract/tesseract.min.js"></script>
 <script src="js/parse.js"></script>
 <script src="js/fuel.js"></script>
+<script src="vendor/leaflet/leaflet.js"></script>
 <script src="js/db.js"></script>
 <script src="js/app.js"></script>
 </body>

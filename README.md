@@ -3,6 +3,7 @@
 Statische Web-App ohne Backend. Alle Daten bleiben lokal (IndexedDB/localStorage).
 
 - `index.html`, `css/`, `js/app.js` (Logik), `js/parse.js` (Preis-/Bon-Parser), `js/fuel.js` (Tankstellen/Preise), `js/db.js`
+- `vendor/leaflet/` Karte im Tanken-Tab (lokal, OSM-Kacheln)
 - `sw.js` Service Worker (offline, cache-first). **Bei jeder Änderung `VERSION` in sw.js erhöhen**, sonst sieht das iPhone die alte Version.
 - `vendor/tesseract/` Tesseract.js 5.1.1 + Sprachdaten eng/hun (lokal, ~13 MB, werden beim ersten Start gecacht)
 - Tests: `node test/parse.test.js` und `node test/fuel.test.js`
