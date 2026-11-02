@@ -40,10 +40,56 @@
     return Number.isFinite(n) ? n : null;
   }
 
+  function normCurrency(c) {
+    const s = String(c || '').trim().toUpperCase();
+    if (s === '€' || s === 'EUR') return 'EUR';
+    if (s === 'FT' || s === 'HUF') return 'HUF';
+    return s || null;
+  }
+
   function pricePoint(value, currency, updated, stale) {
     const price = num(value);
     if (price == null || price <= 0) return null;
-    return { price, currency: currency ? String(currency).toUpperCase() : null, updated: updated || null, stale: !!stale };
+    return { price, currency: normCurrency(currency), updated: updated || null, stale: !!stale };
+  }
+
+  function formatUpdatedAt(v) {
+    if (v == null || v === '') return '';
+    let t;
+    if (typeof v === 'number') t = v < 1e12 ? v * 1000 : v;
+    else {
+      const s = String(v).trim();
+      if (/^\d{4}-\d{2}-\d{2}[ T]\d{2}:\d{2}/.test(s) && !/[zZ]|[+-]\d{2}/.test(s)) t = Date.parse(s.replace(' ', 'T') + 'Z');
+      else t = Date.parse(s);
+    }
+    if (!Number.isFinite(t)) return String(v);
+    return new Date(t).toLocaleString('de-DE', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' });
+  }
+
+  function formatFuelPrice(p, eurPerHuf) {
+    if (!p || !(Number(p.price) > 0)) return null;
+    const cur = normCurrency(p.currency) || 'EUR';
+    let text;
+    if (cur === 'HUF') {
+      text = Math.round(p.price) + ' Ft/l';
+      if (eurPerHuf > 0) text += ' · ' + (Number(p.price) * eurPerHuf).toLocaleString('de-DE', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + ' €/l';
+    } else if (cur === 'EUR') {
+      text = Number(p.price).toLocaleString('de-DE', { minimumFractionDigits: 3, maximumFractionDigits: 3 }) + ' €/l';
+    } else text = p.price + ' ' + cur + '/l';
+    if (p.stale) text += ' · veraltet';
+    return text;
+  }
+
+  function pinPrice(station) {
+    const q = (station && station.quote) || station || {};
+    const pool = [q.e10, q.petrol, q.diesel].filter(p => p && p.price > 0);
+    const fresh = pool.filter(p => !p.stale);
+    const pick = (fresh.length ? fresh : pool).slice().sort((a, b) => a.price - b.price)[0];
+    if (!pick) return '';
+    const cur = normCurrency(pick.currency) || 'EUR';
+    if (cur === 'HUF') return Math.round(pick.price) + ' Ft';
+    if (cur === 'EUR') return Number(pick.price).toLocaleString('de-DE', { minimumFractionDigits: 3, maximumFractionDigits: 3 }) + ' €';
+    return String(pick.price);
   }
 
   // Der Tankerkönig-Demoschlüssel und die unveröffentlichten DE-Daten von fuel-prices.eu
@@ -107,6 +153,7 @@
 
   const PETROL_KEYS = ['petrol', 'e5', 'sp95', 'petrol95', 'benzin', 'pb95', 'benzin95', 'euro95', '95'];
   const DIESEL_KEYS = ['diesel', 'b7', 'gazolaj', 'gázolaj', 'diesel_b7'];
+  const EXTRA_GRADES = [['superplus', 'Super Plus'], ['super100', 'Super 100'], ['premdiesel', 'Premium-Diesel'], ['lpg', 'Autogas']];
 
   function parseNakordoniFuel(json) {
     if (!json || typeof json !== 'object') return { ok: false, error: 'Leere Antwort', stations: [] };
@@ -126,19 +173,41 @@
       if (!s || typeof s !== 'object') return;
       const lat = num(s.lat != null ? s.lat : s.latitude != null ? s.latitude : s.location && s.location.lat);
       const lon = num(s.lon != null ? s.lon : s.lng != null ? s.lng : s.longitude != null ? s.longitude : s.location && (s.location.lon != null ? s.location.lon : s.location.lng));
-      const petrol = pickGrade(s.prices, PETROL_KEYS);
-      const diesel = pickGrade(s.prices, DIESEL_KEYS);
-      if (!petrol && !diesel) return;
+      if (lat == null || lon == null) return;
+      const prices = s.prices;
+      const petrol = pickGrade(prices, PETROL_KEYS);
+      const e10 = pickGrade(prices, ['e10']);
+      const diesel = pickGrade(prices, DIESEL_KEYS);
+      const map = gradeMap(prices);
+      const extras = [];
+      EXTRA_GRADES.forEach(([grade, fallback]) => {
+        const v = map[grade];
+        if (v == null) return;
+        const point = (typeof v === 'number' || typeof v === 'string')
+          ? pricePoint(v, null, null, false)
+          : pricePoint(v.price != null ? v.price : v.value, v.currency || v.currency_symbol, v.updated_at || v.updated, v.stale);
+        if (!point) return;
+        extras.push(Object.assign({ grade, label: (v && v.local_name) || fallback }, point));
+      });
+      const quote = { source: 'nakordoni.eu', sourceUrl: 'https://nakordoni.eu/', petrol, e10, diesel, extras };
+      const d = num(s.distance_km);
       stations.push({
-        lat, lon,
-        name: s.name || s.brand || '',
+        lat, lon, d: d == null ? null : d,
+        name: s.name || s.brand || 'Tankstelle',
         brand: s.brand || '',
-        petrol, diesel,
+        address: s.address || '',
+        country: s.country || '',
+        petrol, e10, diesel, extras, quote,
         source: 'nakordoni.eu',
         sourceUrl: 'https://nakordoni.eu/',
       });
     });
-    return { ok: true, stations, rows: list.length };
+    stations.sort((a, b) => (a.d == null ? 99 : a.d) - (b.d == null ? 99 : b.d));
+    return {
+      ok: true, stations, rows: list.length,
+      attribution: json.attribution || 'Data by nakordoni.eu',
+      terms: json.terms || 'https://nakordoni.eu/en/p/developer_api_terms',
+    };
   }
 
   function parseTankerkoenig(json) {
@@ -299,6 +368,6 @@
     LIVE_STATION_COUNTRIES, WEEKLY_SLUG, PREFERRED_COUNTRIES, GEO_PRIMARY, GEO_FALLBACK, OVERPASS_FUEL,
     distKm, nearestFuelStations, parseNakordoniFuel, parseTankerkoenig, parseFuelPricesStations,
     parseWeeklyAverage, matchPrices, rankPlaces, parseNominatimSearch, nominatimSearchUrl, overpassFuelQuery,
-    bestPlace, mapsUrl, isPlaceholderQuote,
+    bestPlace, mapsUrl, isPlaceholderQuote, formatFuelPrice, formatUpdatedAt, pinPrice, normCurrency,
   };
 });

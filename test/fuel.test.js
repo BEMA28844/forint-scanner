@@ -211,5 +211,55 @@ t('maps urls', () => {
   assert.strictEqual(F.mapsUrl('google', 52.5, 13.4), 'https://www.google.com/maps/dir/?api=1&destination=52.500000,13.400000&travelmode=driving');
 });
 
+t('nakordoni Weyhe fixture: e5, e10, diesel, EUR format, pin price', () => {
+  const de = require('./fixtures/nak_de.json');
+  const r = F.parseNakordoniFuel(de);
+  assert.strictEqual(r.ok, true);
+  assert.strictEqual(r.attribution, 'Data by nakordoni.eu');
+  assert.ok(r.terms.includes('nakordoni.eu'));
+  assert.strictEqual(r.stations.length, 5);
+  const classic = r.stations[0];
+  assert.strictEqual(classic.name, 'CLASSIC Weyhe - Kirchweyhe');
+  assert.strictEqual(classic.lon, 8.87077);
+  assert.strictEqual(classic.address, 'Kirchweyher Straße 4, 28844 Weyhe');
+  assert.strictEqual(classic.petrol.price, 2.059);
+  assert.strictEqual(classic.e10.price, 1.999);
+  assert.strictEqual(classic.diesel.price, 2.189);
+  assert.strictEqual(classic.quote.petrol.currency, 'EUR');
+  assert.ok(classic.extras.some(x => x.grade === 'lpg' && x.price === 1.109));
+  assert.strictEqual(F.formatFuelPrice(classic.petrol), '2,059 €/l');
+  assert.strictEqual(F.pinPrice(classic), '1,999 €');
+  const staleLpg = r.stations[3].extras.find(x => x.grade === 'lpg');
+  assert.strictEqual(staleLpg.stale, true);
+  assert.ok(F.formatFuelPrice(staleLpg).includes('veraltet'));
+});
+
+t('nakordoni Keszthely fixture: HUF to EUR and missing Benzin', () => {
+  const hu = require('./fixtures/nak_hu.json');
+  const r = F.parseNakordoniFuel(hu);
+  assert.strictEqual(r.stations.length, 5);
+  const volan = r.stations[0];
+  assert.strictEqual(volan.diesel.price, 702);
+  assert.strictEqual(volan.diesel.currency, 'HUF');
+  assert.strictEqual(volan.diesel.stale, true);
+  assert.strictEqual(volan.petrol, null);
+  assert.strictEqual(F.formatFuelPrice(volan.petrol, 1.76 / 645), null);
+  const staleE5 = r.stations[1].petrol;
+  assert.strictEqual(staleE5.price, 645);
+  assert.strictEqual(staleE5.stale, true);
+  assert.strictEqual(F.formatFuelPrice(staleE5, 1.76 / 645), '645 Ft/l · 1,76 €/l · veraltet');
+  const mol = r.stations[2];
+  assert.strictEqual(mol.petrol.price, 644);
+  assert.strictEqual(mol.petrol.stale, false);
+  assert.strictEqual(mol.e10.price, 640);
+  assert.strictEqual(F.formatFuelPrice(mol.petrol, 1.76 / 644), '644 Ft/l · 1,76 €/l');
+  assert.ok(F.formatFuelPrice(volan.diesel, 1.76 / 645).startsWith('702 Ft/l · '));
+  assert.ok(F.formatFuelPrice(volan.diesel, 1.76 / 645).includes('veraltet'));
+  assert.strictEqual(F.pinPrice(mol), '640 Ft');
+  const updated = F.formatUpdatedAt(staleE5.updated);
+  const expected = new Date('2026-10-23T13:00:00Z').toLocaleString('de-DE', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' });
+  assert.strictEqual(updated, expected);
+});
+
 console.log(`${n - fail}/${n} Tests bestanden`);
 process.exit(fail ? 1 : 0);

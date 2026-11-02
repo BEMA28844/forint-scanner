@@ -59,8 +59,10 @@ main{flex:1;position:relative;overflow:hidden}
 #fuelMap .leaflet-control-attribution{background:rgba(12,18,15,.88);color:var(--muted);font-size:11px;max-width:70%}
 #fuelMap .leaflet-control-attribution a{color:var(--accent2)}
 .fuel-pin-wrap{background:transparent;border:0}
-.fuel-pin{width:34px;height:34px;border-radius:50%;background:#2fbf71;color:#04140b;border:2px solid #fff;display:flex;align-items:center;justify-content:center;font-weight:800;box-shadow:0 2px 6px #000}
-#fuelCard{position:sticky;bottom:0;background:#18211d;border:1px solid #2a3631;border-radius:16px;padding:12px;margin:8px 0;z-index:5}
+.fuel-pin{width:34px;height:34px;margin:0 auto;border-radius:50%;background:#2fbf71;color:#04140b;border:2px solid #fff;display:flex;align-items:center;justify-content:center;font-weight:800;box-shadow:0 2px 6px #000}
+.fuel-pin-price{margin-top:2px;background:#0f1512;color:var(--accent2);font-size:11px;font-weight:700;padding:1px 5px;border-radius:8px;white-space:nowrap;text-align:center}
+.fuelprices b.stale{color:#ffb4b4}
+#fuelCard{background:#18211d;border:1px solid #2a3631;border-radius:16px;padding:12px;margin:8px 0}
 #fuelCard .t{display:flex;justify-content:space-between;gap:8px;font-weight:700}
 #fcRoute,#fcAlt{width:100%;margin-top:8px}
 #fuelList li.active{outline:2px solid var(--accent)}

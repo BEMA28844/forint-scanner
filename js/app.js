@@ -374,24 +374,11 @@
     btn.classList.remove('hidden');
   }
   function kmText(d) { return (Math.round(d * 10) / 10).toFixed(1).replace('.', ',') + ' km'; }
-  function whenText(v) {
-    if (!v) return '';
-    const t = typeof v === 'number' ? (v < 1e12 ? v * 1000 : v) : Date.parse(v);
-    if (!Number.isFinite(t)) return String(v).slice(0, 16);
-    return new Date(t).toLocaleString('de-DE', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' });
-  }
+  function whenText(v) { return v ? F.formatUpdatedAt(v) : ''; }
   function priceHtml(p) {
-    if (!p) return '<span class="missing">Preis nicht verfügbar</span>';
-    const cur = (p.currency || 'EUR').toUpperCase();
-    let text;
-    if (cur === 'HUF' || cur === 'FT') {
-      text = Math.round(p.price) + ' Ft/l';
-      if (state.eurPerHuf) text += ' (' + P.formatEur(p.price * state.eurPerHuf) + ')';
-    } else if (cur === 'EUR') {
-      text = p.price.toLocaleString('de-DE', { minimumFractionDigits: 3, maximumFractionDigits: 3 }) + ' €/l';
-    } else text = p.price + ' ' + cur + '/l';
-    if (p.stale) text += ' (alt)';
-    return '<b>' + esc(text) + '</b>';
+    const text = F.formatFuelPrice(p, state.eurPerHuf);
+    if (!text) return '<span class="missing">Preis nicht verfügbar</span>';
+    return '<b class="' + (p.stale ? 'stale' : '') + '">' + esc(text) + '</b>';
   }
   function openExternal(url) {
     // Home-Screen-PWA: ein echter target=_blank-Klick verlässt die App (Safari),
@@ -478,9 +465,15 @@
       .addTo(map).bindTooltip('Standort');
     const bounds = [[loc.lat, loc.lon]];
     stations.forEach((s, i) => {
+      const price = F.pinPrice(s.quote || s);
       const marker = L.marker([s.lat, s.lon], {
         title: s.name,
-        icon: L.divIcon({ className: 'fuel-pin-wrap', html: '<div class="fuel-pin">' + (i + 1) + '</div>', iconSize: [34, 34], iconAnchor: [17, 17] }),
+        icon: L.divIcon({
+          className: 'fuel-pin-wrap',
+          html: '<div class="fuel-pin">' + (i + 1) + '</div>' + (price ? '<div class="fuel-pin-price">' + esc(price) + '</div>' : ''),
+          iconSize: price ? [78, 52] : [34, 34],
+          iconAnchor: price ? [39, 17] : [17, 17],
+        }),
       });
       marker.on('click', () => showFuelCard(s, i));
       marker.addTo(fuelLayer);
@@ -492,12 +485,16 @@
   }
   function quoteMeta(q) {
     if (!q) return '';
-    const updated = (q.petrol && q.petrol.updated) || (q.diesel && q.diesel.updated);
-    const whenLabel = updated ? whenText(updated) : 'abgerufen ' + whenText(Date.now());
+    const updated = (q.petrol && q.petrol.updated) || (q.e10 && q.e10.updated) || (q.diesel && q.diesel.updated);
+    const whenLabel = updated ? 'Aktualisiert: ' + whenText(updated) : '';
     if (String(q.source || '').toLowerCase().includes('nakordoni')) {
-      return '<a href="https://nakordoni.eu" target="_blank" rel="noopener">Preise: nakordoni.eu</a> · ' + esc(whenLabel);
+      return '<a href="https://nakordoni.eu" target="_blank" rel="noopener">Preise: nakordoni.eu</a>' + (whenLabel ? ' · ' + esc(whenLabel) : '');
     }
-    return 'Quelle: ' + esc(q.source || '') + ' · ' + esc(whenLabel);
+    return 'Quelle: ' + esc(q.source || '') + (whenLabel ? ' · ' + esc(whenLabel) : '');
+  }
+  function extraHtml(q) {
+    if (!q || !q.extras || !q.extras.length) return '';
+    return 'Weitere Sorten: ' + q.extras.map(x => esc(x.label || x.grade) + ' ' + priceHtml(x)).join(' · ');
   }
   function showFuelCard(s, index) {
     fuelCardStation = s;
@@ -506,7 +503,10 @@
     $('#fcDist').textContent = kmText(s.d);
     $('#fcAddr').textContent = s.address || '';
     $('#fcPetrol').innerHTML = 'Benzin 95: ' + priceHtml(q && q.petrol);
+    $('#fcE10').innerHTML = q && q.e10 ? 'E10: ' + priceHtml(q.e10) : '';
+    $('#fcE10').classList.toggle('hidden', !(q && q.e10));
     $('#fcDiesel').innerHTML = 'Diesel: ' + priceHtml(q && q.diesel);
+    $('#fcExtra').innerHTML = extraHtml(q);
     $('#fcMeta').innerHTML = quoteMeta(q);
     const pref = mapsPref();
     $('#fcRoute').textContent = pref === 'google' ? 'Route in Google Maps' : 'Route in Apple Karten';
@@ -528,7 +528,8 @@
       const q = s.quote;
       return `<li data-i="${i}"><div class="t"><span>${i + 1}. ⛽ ${title}</span><span>${esc(kmText(s.d))}</span></div>
         <div class="m">${esc(s.address || '')}</div>
-        <div class="fuelprices"><span>Benzin 95: ${priceHtml(q && q.petrol)}</span><span>Diesel: ${priceHtml(q && q.diesel)}</span></div>
+        <div class="fuelprices"><span>Benzin 95: ${priceHtml(q && q.petrol)}</span>${q && q.e10 ? `<span>E10: ${priceHtml(q.e10)}</span>` : ''}<span>Diesel: ${priceHtml(q && q.diesel)}</span></div>
+        ${extraHtml(q) ? `<div class="m">${extraHtml(q)}</div>` : ''}
         ${q ? `<div class="m">${quoteMeta(q)}</div>` : ''}</li>`;
     }).join('') : '<li class="small">Keine Tankstelle im Umkreis von 10 km.</li>';
     $('#fuelList').querySelectorAll('li[data-i]').forEach(li => li.addEventListener('click', () => showFuelCard(stations[Number(li.dataset.i)], Number(li.dataset.i))));
@@ -596,7 +597,7 @@
     throw new Error(errors.join(' · '));
   }
   async function fetchNakordoni(lat, lon, key) {
-    const qs = 'lat=' + encodeURIComponent(lat) + '&lon=' + encodeURIComponent(lon) + '&radius_km=10&limit=20&lang=de';
+    const qs = 'lat=' + encodeURIComponent(lat) + '&lon=' + encodeURIComponent(lon) + '&radius_km=10&limit=5&lang=de';
     const headers = { Authorization: 'Bearer ' + key };
     const urls = [
       'https://nakordoni.eu/api/v2/data/fuel-stations?' + qs,
@@ -616,13 +617,43 @@
         : 'nakordoni: HTTP ' + last.http + ', ' + (parsed.rows || 0) + ' Einträge, keine Preise';
     return { parsed, diag };
   }
+  function nakoCredit(parsed) {
+    const text = parsed && parsed.attribution ? parsed.attribution : 'Data by nakordoni.eu';
+    const terms = parsed && parsed.terms ? parsed.terms : 'https://nakordoni.eu/en/p/developer_api_terms';
+    return '<a href="https://nakordoni.eu" target="_blank" rel="noopener">' + esc(text) + '</a> · <a href="' + esc(terms) + '" target="_blank" rel="noopener">Nutzungsbedingungen</a>';
+  }
+  function showNakoStations(loc, seq, prefix, parsed) {
+    const stations = parsed.stations.slice(0, 5).map(s => {
+      if (s.d == null) s.d = distKm(loc, s);
+      if (!s.quote) s.quote = { source: 'nakordoni.eu', petrol: s.petrol, e10: s.e10, diesel: s.diesel, extras: s.extras };
+      return s;
+    });
+    const place = loc.label ? loc.label + ' · ' : '';
+    LS.set('fuelPos', { lat: loc.lat, lon: loc.lon, label: loc.label || '', country: loc.country || (stations[0] && stations[0].country) || '', ts: Date.now() });
+    showLastFuel();
+    renderFuelMap(loc, stations);
+    renderFuel(stations, esc((prefix || '') + place) + stations.length + ' Tankstellen mit Preisen. ' + nakoCredit(parsed));
+  }
   async function loadFuelAt(loc, seq, prefix) {
     const info = $('#fuelInfo');
     try {
       $('#fuelCard').classList.add('hidden');
       renderFuelMap(loc, []);
-      const countryP = countryFor(loc);
       const lat = Number(loc.lat).toFixed(6), lon = Number(loc.lon).toFixed(6);
+      const nako = LS.get('fuelKey', '').trim();
+      let nakoInfo = '';
+      if (nako) {
+        if (seq === fuelSeq) info.textContent = (prefix || '') + 'Lade Spritpreise (nakordoni)…';
+        const res = await fetchNakordoni(lat, lon, nako);
+        if (seq !== fuelSeq) return;
+        if (res.parsed.ok && res.parsed.stations.length) {
+          showNakoStations(loc, seq, prefix, res.parsed);
+          return;
+        }
+        nakoInfo = res.diag || 'nakordoni ohne Stationen';
+        info.textContent = (prefix || '') + nakoInfo + ' – OpenStreetMap als Ersatz…';
+      }
+      const countryP = countryFor(loc);
       let elements = null;
       try {
         const j = await fetchOverpassFuel(F.overpassFuelQuery(loc.lat, loc.lon), (msg) => { if (seq === fuelSeq) info.textContent = (prefix || '') + msg; });
@@ -643,15 +674,9 @@
       showLastFuel();
       const quotes = [];
       const warnings = [];
-      let nakoInfo = '';
       const jobs = [];
-      const nako = LS.get('fuelKey', '').trim();
       const tanker = LS.get('tankerKey', '').trim();
       const watch = (p) => p.catch(e => warnings.push(e.message || 'Preisquelle fehlgeschlagen'));
-      if (nako) jobs.push(watch(fetchNakordoni(lat, lon, nako).then(res => {
-        nakoInfo = res.diag;
-        if (res.parsed.ok) quotes.push(...res.parsed.stations);
-      })));
       if (tanker && (!country || country === 'DE')) jobs.push(watch(fetchJsonSoft('https://creativecommons.tankerkoenig.de/json/list.php?lat=' + lat + '&lng=' + lon + '&rad=10&sort=dist&type=all&apikey=' + encodeURIComponent(tanker)).then(r => {
         const parsed = F.parseTankerkoenig(r.json || { ok: false, message: r.error || ('HTTP ' + r.http) });
         if (!parsed.ok) warnings.push('Tankerkönig: HTTP ' + (r.http || 0) + ' ' + parsed.error);
@@ -667,8 +692,6 @@
       await Promise.all(jobs);
       if (seq !== fuelSeq) return;
       const matched = F.matchPrices(stations, quotes, 0.35);
-      const assigned = matched.filter(s => s.quote && String(s.quote.source || '').toLowerCase().includes('nakordoni')).length;
-      if (nakoInfo && nakoInfo.indexOf('Stationen mit Preis') !== -1) nakoInfo += ', ' + assigned + ' zugeordnet';
       LS.set('fuelCache', { v: 2, ts: Date.now(), loc, stations: matched });
       const priced = matched.filter(s => s.quote).length;
       const bits = [(prefix || '') + place + matched.length + ' nächste Tankstellen im Umkreis von 10 km.'];
