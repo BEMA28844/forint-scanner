@@ -3,7 +3,6 @@
   "short_name": "Forint→€",
   "description": "Preise in Forint live per Kamera in Euro umrechnen, Preisverlauf, Kassenbons und Tankstellen.",
   "lang": "de",
-  "start_url": "./",
   "scope": "./",
   "display": "standalone",
   "orientation": "portrait",

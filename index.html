@@ -23,6 +23,7 @@
   </div>
   <button id="btnSettings" class="icon" aria-label="Einstellungen">⚙︎</button>
 </header>
+<p id="setupHint" class="setupHint hidden">Schlüssel gespeichert. Jetzt über Teilen → Zum Home-Bildschirm hinzufügen die App installieren. Ein schon vorhandenes Symbol vorher entfernen – die Adresse muss #nak=… noch anzeigen.</p>
 
 <main>
   <!-- Kamera -->
@@ -174,6 +175,7 @@
     </label>
     <label class="check"><input id="setOcrText" type="checkbox"> Artikelnamen im Bild erkennen (langsamer)</label>
     <p class="small">Alle Daten bleiben nur auf diesem Gerät gespeichert.</p>
+    <button type="button" id="btnSetupLink" class="secondary">Einrichtungs-Link für Familie kopieren</button>
     <div class="dlgActions">
       <button value="wipe" id="btnWipe" class="danger" type="button">Verlauf löschen</button>
       <button value="ok" class="primary">Fertig</button>
@@ -196,6 +198,7 @@
 <script src="vendor/tesseract/tesseract.min.js"></script>
 <script src="js/parse.js"></script>
 <script src="js/fuel.js"></script>
+<script src="js/setup.js"></script>
 <script src="vendor/leaflet/leaflet.js"></script>
 <script src="js/db.js"></script>
 <script src="js/app.js"></script>

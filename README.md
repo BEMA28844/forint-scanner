@@ -16,3 +16,5 @@ fuel-prices.eu wo echte Kassenpreise ohne Schlüssel liegen (nicht Ungarn, nicht
 Landesdurchschnitt (kein Kassenpreis): EU Weekly Oil Bulletin über fuel-prices.eu.
 
 Kamera braucht https → z. B. GitHub Pages hosten, dann in Safari öffnen › Teilen › „Zum Home-Bildschirm“.
+
+Einrichtungs-Link (Einstellungen): der nakordoni-Schlüssel steht nur im URL-Fragment (`#nak=…`), nie in der Query und nie im Repository. `manifest.webmanifest` hat absichtlich kein `start_url`, damit iOS beim „Zum Home-Bildschirm“ die gerade geöffnete Adresse samt Fragment übernimmt. Safari und die Home-Bildschirm-App teilen sich keinen Speicher.

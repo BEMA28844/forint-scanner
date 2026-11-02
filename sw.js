@@ -1,7 +1,7 @@
 /* Service Worker: App-Dateien offline verfügbar machen */
-const VERSION = 'forint-v1.2.1';
+const VERSION = 'forint-v1.3.0';
 const SHELL = [
-  './', 'index.html', 'css/styles.css', 'js/app.js', 'js/parse.js', 'js/fuel.js', 'js/db.js', 'manifest.webmanifest',
+  './', 'index.html', 'css/styles.css', 'js/app.js', 'js/parse.js', 'js/fuel.js', 'js/setup.js', 'js/db.js', 'manifest.webmanifest',
   'icons/icon-180.png', 'icons/icon-192.png', 'icons/icon-512.png',
   'vendor/leaflet/leaflet.js', 'vendor/leaflet/leaflet.css',
   'vendor/leaflet/images/marker-icon.png', 'vendor/leaflet/images/marker-icon-2x.png', 'vendor/leaflet/images/marker-shadow.png',

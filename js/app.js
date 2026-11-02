@@ -890,7 +890,49 @@
     await DB.clear(); await loadScans(); setDlg.close(); toast('Verlauf gelöscht');
   });
 
+  // ---------------- Einrichtungs-Link ----------------
+  function isStandaloneApp() {
+    return window.ForintSetup.isStandalone(navigator, (q) => window.matchMedia(q));
+  }
+  function importSetupFromHash() {
+    const parsed = window.ForintSetup.parseHash(location.hash);
+    if (!parsed) return;
+    if (parsed.nak) LS.set('fuelKey', parsed.nak);
+    if (parsed.tk) LS.set('tankerKey', parsed.tk);
+    if (parsed.map) LS.set('mapsApp', parsed.map);
+    if (isStandaloneApp()) {
+      history.replaceState(null, '', location.pathname + location.search);
+      toast('Schlüssel gespeichert – Tankpreise sind jetzt aktiv.', 4500);
+    } else {
+      toast('Schlüssel gespeichert – Tankpreise sind jetzt aktiv.', 4500);
+      const hint = $('#setupHint');
+      if (hint) hint.classList.remove('hidden');
+    }
+  }
+  $('#btnSetupLink').addEventListener('click', async (ev) => {
+    ev.preventDefault();
+    const nak = $('#setFuelKey').value.trim();
+    const tk = $('#setTankerKey').value.trim();
+    const map = $('#setMapsApp').value === 'google' ? 'google' : ($('#setMapsApp').value === 'apple' ? 'apple' : '');
+    if (!nak && !tk) { toast('Zuerst einen Schlüssel eintragen.'); return; }
+    const url = window.ForintSetup.buildLink(new URL('./', location.href).href, { nak, tk, map });
+    try {
+      if (navigator.share) await navigator.share({ title: 'Forint-Scanner', text: 'Einrichtung der Tankpreise', url });
+      else if (navigator.clipboard && navigator.clipboard.writeText) {
+        await navigator.clipboard.writeText(url);
+        toast('Link kopiert');
+      } else toast('Teilen nicht möglich');
+    } catch (err) {
+      if (err && err.name === 'AbortError') return;
+      try {
+        await navigator.clipboard.writeText(url);
+        toast('Link kopiert');
+      } catch (e2) { toast('Teilen nicht möglich'); }
+    }
+  });
+
   // ---------------- Start ----------------
+  importSetupFromHash();
   if ('serviceWorker' in navigator && location.protocol !== 'file:') navigator.serviceWorker.register('sw.js').catch(e => console.warn('SW', e));
   window.addEventListener('online', loadRate);
   loadRate();
