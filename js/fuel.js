@@ -92,6 +92,21 @@
     return String(pick.price);
   }
 
+  function shortBrand(station) {
+    let s = String((station && (station.brand || station.name)) || '').trim();
+    s = s.split(/\s+[-–|]\s+/)[0].replace(/\s+tankstelle$/i, '').trim();
+    if (s.length <= 14) return s;
+    const cut = s.slice(0, 13).replace(/\s+\S*$/, '').trim();
+    return (cut || s.slice(0, 13)) + '…';
+  }
+
+  function pinCaption(station) {
+    const price = pinPrice(station);
+    const brand = shortBrand(station);
+    if (brand && price) return brand + ' · ' + price;
+    return price || brand || '';
+  }
+
   // Der Tankerkönig-Demoschlüssel und die unveröffentlichten DE-Daten von fuel-prices.eu
   // liefern für alle Sorten exakt 1,009. Das ist kein Kassenpreis.
   function isPlaceholderQuote(petrol, diesel, extra) {
@@ -339,15 +354,41 @@
     return a.city || a.town || a.village || a.municipality || a.hamlet || '';
   }
 
-  function placeHeading(p) {
+  function parseLongPlace(label) {
+    const parts = String(label || '').split(',').map(s => s.trim()).filter(Boolean);
+    let postcode = '';
+    const names = [];
+    const skip = /^(landkreis|kreis|bezirk|regierungsbezirk)\b|^(deutschland|germany|ungarn|hungary|magyarország|österreich|austria|schweiz|switzerland|niedersachsen|bayern|baden-württemberg|nordrhein-westfalen|hessen|sachsen|thüringen|brandenburg|mecklenburg-vorpommern|schleswig-holstein|rheinland-pfalz|saarland|bremen|hamburg|berlin|transdanubien|dunántúl)$/i;
+    parts.forEach(part => {
+      if (/^\d{4,5}$/.test(part)) { if (!postcode) postcode = part; return; }
+      if (skip.test(part)) return;
+      names.push(part);
+    });
+    let town = names[0] || '';
+    names.forEach(n => {
+      names.forEach(other => {
+        if (n !== other && other.toLowerCase().endsWith(n.toLowerCase()) && n.length >= 3) town = n;
+      });
+    });
+    return { town, postcode };
+  }
+
+  function shortPlace(p) {
     if (!p) return '';
-    const town = p.town || '';
-    const plz = p.postcode || '';
-    if (town && plz) return 'Tankstellen bei ' + town + ' (' + plz + ')';
-    if (town) return 'Tankstellen bei ' + town;
-    if (plz) return 'Tankstellen bei ' + plz;
-    const label = String(p.label || '').split(',')[0].trim();
-    return label ? 'Tankstellen bei ' + label : '';
+    let town = p.town || '';
+    let plz = p.postcode || '';
+    if ((!town || !plz) && p.label) {
+      const parsed = parseLongPlace(p.label);
+      if (!town) town = parsed.town;
+      if (!plz) plz = parsed.postcode;
+    }
+    if (town && plz) return town + ' (' + plz + ')';
+    return town || plz || '';
+  }
+
+  function placeHeading(p) {
+    const short = shortPlace(p);
+    return short ? 'Tankstellen bei ' + short : '';
   }
 
   function nominatimSearchUrl(q, opts) {
@@ -386,6 +427,6 @@
     LIVE_STATION_COUNTRIES, WEEKLY_SLUG, PREFERRED_COUNTRIES, GEO_PRIMARY, GEO_FALLBACK, OVERPASS_FUEL,
     distKm, nearestFuelStations, parseNakordoniFuel, parseTankerkoenig, parseFuelPricesStations,
     parseWeeklyAverage, matchPrices, rankPlaces, parseNominatimSearch, nominatimSearchUrl, overpassFuelQuery,
-    bestPlace, mapsUrl, isPlaceholderQuote, formatFuelPrice, formatUpdatedAt, pinPrice, normCurrency, placeHeading,
+    bestPlace, mapsUrl, isPlaceholderQuote, formatFuelPrice, formatUpdatedAt, pinPrice, pinCaption, shortBrand, shortPlace, normCurrency, placeHeading,
   };
 });

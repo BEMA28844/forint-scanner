@@ -479,23 +479,47 @@
       .addTo(map).bindTooltip('Standort');
     const bounds = [[loc.lat, loc.lon]];
     stations.forEach((s, i) => {
-      const price = F.pinPrice(s.quote || s);
+      const caption = F.pinCaption(s);
+      const wide = Math.min(168, Math.max(34, caption.length * 7 + 12));
       const marker = L.marker([s.lat, s.lon], {
         title: s.name,
         icon: L.divIcon({
           className: 'fuel-pin-wrap',
-          html: '<div class="fuel-pin">' + (i + 1) + '</div>' + (price ? '<div class="fuel-pin-price">' + esc(price) + '</div>' : ''),
-          iconSize: price ? [78, 52] : [34, 34],
-          iconAnchor: price ? [39, 17] : [17, 17],
+          html: '<div class="fuel-pin">' + (i + 1) + '</div>' + (caption ? '<div class="fuel-pin-price">' + esc(caption) + '</div>' : ''),
+          iconSize: caption ? [wide, 52] : [34, 34],
+          iconAnchor: caption ? [wide / 2, 17] : [17, 17],
         }),
       });
       marker.on('click', () => showFuelCard(s, i));
       marker.addTo(fuelLayer);
       bounds.push([s.lat, s.lon]);
     });
-    if (stations.length) map.fitBounds(bounds, { padding: [28, 28], maxZoom: 14 });
+    if (stations.length) map.fitBounds(bounds, { padding: [36, 36], maxZoom: 14 });
     else map.setView([loc.lat, loc.lon], 13);
-    setTimeout(() => map.invalidateSize(), 80);
+    setTimeout(() => { map.invalidateSize(); layoutPinLabels(); }, 80);
+    if (!map._pinLayout) {
+      map._pinLayout = () => layoutPinLabels();
+      map.on('zoomend', map._pinLayout);
+    }
+  }
+  function layoutPinLabels() {
+    const nodes = [...document.querySelectorAll('#fuelMap .fuel-pin-price')];
+    nodes.forEach(n => { n.style.transform = ''; });
+    nodes.forEach((n, i) => {
+      let guard = 0;
+      while (guard < 5) {
+        const a = n.getBoundingClientRect();
+        const hit = nodes.slice(0, i).some(o => {
+          const b = o.getBoundingClientRect();
+          return Math.abs((a.left + a.width / 2) - (b.left + b.width / 2)) < (a.width + b.width) / 2 - 2
+            && Math.abs((a.top + a.height / 2) - (b.top + b.height) / 2) < (a.height + b.height) / 2 + 2;
+        });
+        if (!hit) break;
+        guard++;
+        const shift = (guard % 2 ? 1 : -1) * 16 * Math.ceil(guard / 2);
+        n.style.transform = 'translate(' + shift + 'px, ' + (guard % 2 ? 8 : 0) + 'px)';
+      }
+    });
   }
   function quoteMeta(q) {
     if (!q) return '';
@@ -732,6 +756,8 @@
     $('#fuelSuggest').innerHTML = '';
     if (saved) {
       showFuelWhere(saved);
+      const field = $('#fuelPlace');
+      if (field) field.value = F.shortPlace(saved) || saved.query || '';
       const hint = $('#fuelHint');
       if (hint) hint.classList.add('hidden');
       loadFuelAt(saved, ++fuelSeq);
@@ -804,13 +830,13 @@
           town: p.town || '', postcode: p.postcode || '', query,
         };
         saveFuelPlace(loc);
-        $('#fuelPlace').value = query;
+        $('#fuelPlace').value = F.shortPlace(loc) || query;
         loadFuelAt(loc, ++fuelSeq);
       };
       const best = F.bestPlace(places, LS.get('fuelPos', null));
       if (autoPick || places.length === 1) { use(best); return; }
       const ordered = [best].concat(places.filter(p => p !== best));
-      $('#fuelSuggest').innerHTML = ordered.map((p, i) => `<li data-i="${i}">${esc(p.label)}</li>`).join('');
+      $('#fuelSuggest').innerHTML = ordered.map((p, i) => `<li data-i="${i}">${esc(F.shortPlace(p) || p.label)}</li>`).join('');
       $('#fuelSuggest').querySelectorAll('li').forEach(li => li.addEventListener('click', () => use(ordered[Number(li.dataset.i)])));
       $('#fuelInfo').textContent = 'Mehrere Treffer – einen antippen oder Suchen für den besten Treffer.';
     } catch (e) {

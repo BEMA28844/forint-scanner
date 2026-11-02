@@ -159,6 +159,21 @@ t('place heading uses town and postcode', () => {
   assert.strictEqual(F.placeHeading(null), '');
 });
 
+t('long nominatim name shortens to Weyhe (28844)', () => {
+  const label = '28844, Kirchweyhe, Weyhe, Landkreis Diepholz, Niedersachsen, Deutschland';
+  assert.strictEqual(F.shortPlace({ label }), 'Weyhe (28844)');
+  assert.strictEqual(F.placeHeading({ label }), 'Tankstellen bei Weyhe (28844)');
+});
+
+t('pin caption shows brand and cheapest price', () => {
+  assert.strictEqual(F.pinCaption({ brand: 'CLASSIC', quote: { e10: { price: 2.259, currency: 'EUR' } } }), 'CLASSIC · 2,259 €');
+  assert.strictEqual(F.pinCaption({ brand: 'ARAL', quote: { petrol: { price: 2.289, currency: 'EUR' } } }), 'ARAL · 2,289 €');
+  assert.strictEqual(F.shortBrand({ name: 'CLASSIC Weyhe - Kirchweyhe' }), 'CLASSIC Weyhe');
+  const long = F.shortBrand({ name: 'Sehr langer Stationsname ohne Marke' });
+  assert.ok(long.length <= 14, long);
+  assert.ok(long.endsWith('…'));
+});
+
 t('nominatim search parse', () => {
   const list = F.parseNominatimSearch([
     { lat: '42.09', lon: '27.42', display_name: '8360, Bulgaria', address: { country_code: 'bg' } },
