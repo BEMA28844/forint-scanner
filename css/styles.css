@@ -79,6 +79,12 @@ select{font:inherit;width:100%;padding:9px 10px;border-radius:10px;border:1px so
 #rcTable input[type=checkbox]{width:20px;height:20px}
 #rcTable .namecell{min-width:42%}
 .hu-orig{display:block;margin-top:2px;line-height:1.2}
+.receiptCard{background:var(--card);border-radius:12px;padding:12px;margin:10px 0}
+.receiptCard .t{display:flex;justify-content:space-between;gap:8px;font-weight:600}
+.receiptCard .t span:last-child{font-weight:500;color:var(--muted);font-size:.85rem;white-space:nowrap}
+.receiptCard .rcitems{list-style:none;margin:8px 0 0;padding:0}
+.receiptCard .rcitems li{display:flex;justify-content:space-between;gap:8px;padding:4px 0;border-top:1px solid #24302b}
+.receiptDel{width:100%;margin-top:12px;padding:14px 16px;font-size:1.05rem}
 .hu-orig:empty{display:none}
 pre{white-space:pre-wrap;font-size:.75rem;color:var(--muted)}
 #ticker{height:34px;background:#06100b;border-top:1px solid #1f2d26;overflow:hidden;white-space:nowrap;position:relative}

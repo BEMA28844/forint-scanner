@@ -191,6 +191,7 @@
     document.querySelectorAll('.view').forEach(v => v.classList.toggle('active', v.id === 'view-' + b.dataset.view));
     state.paused = b.dataset.view !== 'camera' || state.userPaused;
     if (b.dataset.view === 'fuel') { openFuelTab(); setTimeout(() => fuelMap && fuelMap.invalidateSize(), 60); }
+    if (b.dataset.view === 'receipt') renderReceiptList();
   }));
 
   // ---------------- OCR ----------------
@@ -371,7 +372,7 @@
 
   // ---------------- Tankstellen ----------------
   const F = window.ForintFuel;
-  let fuelSeq = 0, fuelGeoTimer = null, lastNominatim = 0, routeTarget = null;
+  let fuelSeq = 0, fuelGeoTimer = null, lastNominatim = 0, routeTarget = null, keepFuelHint = false;
 
   function mapsPref() {
     const v = LS.get('mapsApp', 'apple');
@@ -395,7 +396,7 @@
     LS.set('fuelPos', place);
     showFuelWhere(place);
     const hint = $('#fuelHint');
-    if (hint) hint.classList.add('hidden');
+    if (hint && !keepFuelHint) hint.classList.add('hidden');
     return place;
   }
   function showLastFuel() { showFuelWhere(LS.get('fuelPos', null)); }
@@ -552,10 +553,11 @@
     $('#fcName').textContent = (index + 1) + '. ' + (s.name || 'Tankstelle');
     $('#fcDist').textContent = kmText(s.d);
     $('#fcAddr').textContent = s.address || '';
-    $('#fcPetrol').innerHTML = 'Benzin 95: ' + priceHtml(q && q.petrol);
-    $('#fcE10').innerHTML = q && q.e10 ? 'E10: ' + priceHtml(q.e10) : '';
-    $('#fcE10').classList.toggle('hidden', !(q && q.e10));
-    $('#fcDiesel').innerHTML = 'Diesel: ' + priceHtml(q && q.diesel);
+    const grades = F.fuelGradeLines(q);
+    $('#fcPetrol').innerHTML = esc(grades[0].label) + ': ' + priceHtml(grades[0].price);
+    $('#fcE10').innerHTML = esc(grades[1].label) + ': ' + priceHtml(grades[1].price);
+    $('#fcE10').classList.remove('hidden');
+    $('#fcDiesel').innerHTML = esc(grades[2].label) + ': ' + priceHtml(grades[2].price);
     $('#fcExtra').innerHTML = extraHtml(q);
     $('#fcMeta').innerHTML = quoteMeta(q);
     const pref = mapsPref();
@@ -578,7 +580,7 @@
       const q = s.quote;
       return `<li data-i="${i}"><div class="t"><span>${i + 1}. ⛽ ${title}</span><span>${esc(kmText(s.d))}</span></div>
         <div class="m">${esc(s.address || '')}</div>
-        <div class="fuelprices"><span>Benzin 95: ${priceHtml(q && q.petrol)}</span>${q && q.e10 ? `<span>E10: ${priceHtml(q.e10)}</span>` : ''}<span>Diesel: ${priceHtml(q && q.diesel)}</span></div>
+        <div class="fuelprices">${F.fuelGradeLines(q).map(g => `<span>${esc(g.label)}: ${priceHtml(g.price)}</span>`).join('')}</div>
         ${extraHtml(q) ? `<div class="m">${extraHtml(q)}</div>` : ''}
         ${q ? `<div class="m">${quoteMeta(q)}</div>` : ''}</li>`;
     }).join('') : '<li class="small">Keine Tankstelle im Umkreis von 10 km.</li>';
@@ -763,51 +765,73 @@
     const saved = LS.get('fuelPos', null);
     return saved && Number.isFinite(Number(saved.lat)) && Number.isFinite(Number(saved.lon)) ? saved : null;
   }
-  function openFuelTab() {
-    const saved = savedFuelPlace();
-    $('#fuelSuggest').innerHTML = '';
-    if (saved) {
-      showFuelWhere(saved);
-      const field = $('#fuelPlace');
-      if (field) field.value = F.shortPlace(saved) || saved.query || '';
-      const hint = $('#fuelHint');
+  let fuelBoot = { status: 'idle', loc: null, at: 0 };
+  function classifyGeoError(err) {
+    const msg = err && err.message || '';
+    if (msg === 'Standortfreigabe verweigert') return 'denied';
+    if (msg === 'Standort-Zeitüberschreitung') return 'timeout';
+    return 'unavailable';
+  }
+  function presentFuelDecision() {
+    const decision = F.fuelStartDecision(fuelBoot, savedFuelPlace());
+    const hint = $('#fuelHint');
+    if (decision.action === 'loading' || decision.action === 'locate') {
+      $('#fuelInfo').textContent = decision.info;
       if (hint) hint.classList.add('hidden');
-      loadFuelAt(saved, ++fuelSeq);
       return;
     }
-    showFuelWhere(null);
-    useDeviceLocation(false);
+    if (decision.action === 'show' || decision.action === 'saved') {
+      if (decision.loc) {
+        showFuelWhere(decision.loc);
+        const field = $('#fuelPlace');
+        if (field && !field.value) field.value = F.shortPlace(decision.loc) || decision.loc.query || '';
+      }
+      keepFuelHint = decision.action === 'saved' && !!decision.info;
+      if (hint) {
+        if (keepFuelHint) {
+          hint.textContent = decision.info;
+          hint.classList.remove('hidden');
+        } else hint.classList.add('hidden');
+      }
+      loadFuelAt(decision.loc, ++fuelSeq);
+      return;
+    }
+    $('#fuelInfo').textContent = '';
+    $('#fuelList').innerHTML = '';
+    $('#fuelCard').classList.add('hidden');
+    if (hint) {
+      hint.textContent = decision.hint;
+      hint.classList.remove('hidden');
+    }
   }
-  function useDeviceLocation(fromButton) {
-    const seq = ++fuelSeq;
-    const hadPlace = !!savedFuelPlace();
-    $('#fuelSuggest').innerHTML = '';
-    if (!hadPlace) $('#fuelInfo').textContent = 'Standort wird ermittelt…';
-    // getCurrentPosition noch im Klick (vor dem ersten await) anstoßen, sonst zeigt iOS keinen Dialog.
+  function bootFuelLocation(force) {
+    if (!force && (fuelBoot.status === 'pending' || fuelBoot.status === 'ok')) return;
+    if (fuelBoot.status === 'pending') return;
+    fuelBoot = { status: 'pending', loc: null, at: 0 };
+    if ($('#view-fuel').classList.contains('active')) presentFuelDecision();
     const posP = Promise.race([
-      getPos({ timeout: 12000, maximumAge: fromButton ? 0 : 300000 }),
+      getPos({ timeout: 12000, maximumAge: 0 }),
       new Promise((_, rej) => setTimeout(() => rej(new Error('Standort-Zeitüberschreitung')), 13500)),
     ]);
     posP.then(async (pos) => {
-      if (seq !== fuelSeq) return;
       const loc = { lat: pos.lat, lon: pos.lon, label: '' };
       await countryFor(loc);
-      if (seq !== fuelSeq) return;
       saveFuelPlace(loc);
-      await loadFuelAt(loc, seq);
-    }).catch(() => {
-      if (seq !== fuelSeq) return;
-      if (hadPlace) return;
-      $('#fuelInfo').textContent = '';
-      $('#fuelList').innerHTML = '';
-      $('#fuelCard').classList.add('hidden');
-      const hint = $('#fuelHint');
-      if (hint) {
-        hint.textContent = 'Ort oder PLZ eingeben – die App merkt sich den Ort.';
-        hint.classList.remove('hidden');
-      }
+      fuelBoot = { status: 'ok', loc, at: Date.now() };
+      if ($('#view-fuel').classList.contains('active')) presentFuelDecision();
+    }).catch((err) => {
+      fuelBoot = { status: classifyGeoError(err), loc: null, at: Date.now() };
+      if ($('#view-fuel').classList.contains('active')) presentFuelDecision();
     });
   }
+  function openFuelTab() {
+    $('#fuelSuggest').innerHTML = '';
+    const fresh = fuelBoot.status === 'ok' && fuelBoot.loc && Date.now() - fuelBoot.at < 120000;
+    if (fresh) { presentFuelDecision(); return; }
+    if (fuelBoot.status === 'pending') { presentFuelDecision(); return; }
+    bootFuelLocation(true);
+  }
+  function useDeviceLocation() { bootFuelLocation(true); }
   async function geocodeFuel(query) {
     const bias = LS.get('fuelPos', null);
     const tiers = [
@@ -823,6 +847,7 @@
     return [];
   }
   async function searchFuelPlace(q, autoPick) {
+    keepFuelHint = false;
     const query = (q != null ? q : $('#fuelPlace').value).trim();
     if (query.length < 2) { $('#fuelSuggest').innerHTML = ''; return; }
     const seq = ++fuelSeq;
@@ -858,7 +883,7 @@
       if (btn) btn.addEventListener('click', () => searchFuelPlace(query, true));
     }
   }
-  $('#btnFuel').addEventListener('click', () => useDeviceLocation(true));
+  $('#btnFuel').addEventListener('click', () => useDeviceLocation());
   $('#btnFuelSearch').addEventListener('click', () => searchFuelPlace(null, true));
   $('#fuelPlace').addEventListener('input', () => {
     clearTimeout(fuelGeoTimer);
@@ -1017,10 +1042,47 @@
       .filter(r => r.name && r.huf > 0)
       .map((r, i) => ({ ...r, key: P.normName(r.name), eurPerHuf: state.eurPerHuf, market, ts: ts + i, src: 'receipt' }));
     if (!recs.length) { toast('Nichts zum Speichern ausgewählt'); return; }
-    await DB.addMany(recs); await loadScans();
+    const id = await DB.saveReceipt({ market, ts, total: recs.reduce((a, r) => a + r.huf, 0), items: recs });
+    $('#receiptForm').dataset.receiptId = String(id);
+    await loadScans();
+    await renderReceiptList();
     toast(`${recs.length} Preise gespeichert`);
-    $('#receiptForm').classList.add('hidden'); $('#receiptImg').classList.add('hidden');
-    $('#receiptCam').value = ''; $('#receiptFile').value = '';
+    clearReceiptForm();
+  });
+  function clearReceiptForm() {
+    $('#receiptForm').classList.add('hidden');
+    $('#receiptForm').dataset.receiptId = '';
+    $('#receiptImg').classList.add('hidden');
+    $('#rcTable tbody').innerHTML = '';
+    $('#rcTotal').textContent = '';
+    $('#receiptCam').value = '';
+    $('#receiptFile').value = '';
+  }
+  async function renderReceiptList() {
+    const el = $('#receiptSaved');
+    if (!el) return;
+    const list = await DB.receipts();
+    el.innerHTML = list.map(r => `<article class="receiptCard">
+      <div class="t"><span>${esc(r.market || 'Kassenbon')}</span><span>${esc(fmtDate(r.ts))}</span></div>
+      <ul class="rcitems">${(r.items || []).map(it => `<li><span>${esc(it.name)}</span><span>${esc(P.formatHuf(it.huf))}</span></li>`).join('')}</ul>
+      <button type="button" class="danger receiptDel" data-del="${r.id}">Beleg löschen</button>
+    </article>`).join('');
+    el.querySelectorAll('[data-del]').forEach(btn => btn.addEventListener('click', () => deleteReceiptUi(Number(btn.dataset.del))));
+  }
+  async function deleteReceiptUi(id) {
+    if (!confirm('Diesen Kassenbon wirklich löschen?')) return;
+    await DB.deleteReceipt(id);
+    if (String($('#receiptForm').dataset.receiptId || '') === String(id)) clearReceiptForm();
+    await loadScans();
+    await renderReceiptList();
+    toast('Kassenbon gelöscht');
+  }
+  $('#rcDelete').addEventListener('click', () => {
+    const id = Number($('#receiptForm').dataset.receiptId || 0);
+    if (id) { deleteReceiptUi(id); return; }
+    if (!confirm('Diesen Kassenbon wirklich löschen?')) return;
+    clearReceiptForm();
+    toast('Kassenbon gelöscht');
   });
 
   // ---------------- Einstellungen ----------------
@@ -1097,6 +1159,8 @@
 
   // ---------------- Start ----------------
   importSetupFromHash();
+  bootFuelLocation(false);
+  renderReceiptList();
   if ('serviceWorker' in navigator && location.protocol !== 'file:') navigator.serviceWorker.register('sw.js').catch(e => console.warn('SW', e));
   window.addEventListener('online', loadRate);
   loadRate();

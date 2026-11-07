@@ -243,7 +243,7 @@
         lat: num(s.lat), lon: num(s.lng != null ? s.lng : s.lon),
         name: s.name || s.brand || '',
         brand: s.brand || '',
-        petrol, diesel,
+        petrol, diesel, e10,
         source: 'Tankerkönig (MTS-K)',
         sourceUrl: 'https://creativecommons.tankerkoenig.de/',
       });
@@ -282,7 +282,7 @@
         lat: num(s.lat), lon: num(s.lng != null ? s.lng : s.lon),
         name: s.name || s.brand || '',
         brand: s.brand || '',
-        petrol, diesel,
+        petrol, diesel, e10,
         source: 'fuel-prices.eu',
         sourceUrl: 'https://www.fuel-prices.eu/',
       });
@@ -386,6 +386,31 @@
     return town || plz || '';
   }
 
+  function fuelGradeLines(quote) {
+    const q = quote || {};
+    return [
+      { id: 'e5', label: 'Super E5', price: q.petrol || null },
+      { id: 'e10', label: 'Super E10', price: q.e10 || null },
+      { id: 'diesel', label: 'Diesel', price: q.diesel || null },
+    ];
+  }
+
+  function fuelStartDecision(boot, saved) {
+    const locOk = boot && boot.loc && Number.isFinite(Number(boot.loc.lat)) && Number.isFinite(Number(boot.loc.lon));
+    if (boot && boot.status === 'ok' && locOk) return { action: 'show', loc: boot.loc, info: '', hint: '' };
+    if (boot && boot.status === 'pending') return { action: 'loading', loc: null, info: 'Standort wird ermittelt…', hint: '' };
+    if (!boot || boot.status === 'idle') return { action: 'locate', loc: null, info: 'Standort wird ermittelt…', hint: '' };
+    const info = boot.status === 'denied'
+      ? 'Standort nicht freigegeben – zeige den letzten Ort.'
+      : boot.status === 'timeout'
+        ? 'Standort-Zeitüberschreitung – zeige den letzten Ort.'
+        : 'Standort nicht ermittelbar – zeige den letzten Ort.';
+    if (saved && Number.isFinite(Number(saved.lat)) && Number.isFinite(Number(saved.lon))) {
+      return { action: 'saved', loc: saved, info, hint: '' };
+    }
+    return { action: 'manual', loc: null, info: '', hint: 'Ort oder PLZ eingeben – die App merkt sich den Ort.' };
+  }
+
   function placeHeading(p) {
     const short = shortPlace(p);
     return short ? 'Tankstellen bei ' + short : '';
@@ -428,5 +453,6 @@
     distKm, nearestFuelStations, parseNakordoniFuel, parseTankerkoenig, parseFuelPricesStations,
     parseWeeklyAverage, matchPrices, rankPlaces, parseNominatimSearch, nominatimSearchUrl, overpassFuelQuery,
     bestPlace, mapsUrl, isPlaceholderQuote, formatFuelPrice, formatUpdatedAt, pinPrice, pinCaption, shortBrand, shortPlace, normCurrency, placeHeading,
+    fuelGradeLines, fuelStartDecision,
   };
 });
