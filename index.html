@@ -74,6 +74,7 @@
       <button id="btnFuel" class="smallbtn" type="button">Standort verwenden</button>
     </div>
     <p id="fuelWhere" class="fuelWhere"></p>
+    <p id="fuelHint" class="small hidden"></p>
     <p id="fuelInfo" class="small"></p>
     <ul id="fuelSuggest" class="list"></ul>
     <div id="fuelMap" class="hidden" role="region" aria-label="Karte der Tankstellen"></div>
@@ -87,7 +88,6 @@
       <button type="button" id="fcAlt" class="secondary">Andere Karten-App</button>
     </div>
     <ul id="fuelList" class="list"></ul>
-    <p id="fuelHint" class="small hidden"></p>
     <p id="fuelSources" class="small"><a href="https://nakordoni.eu" target="_blank" rel="noopener">Preise: nakordoni.eu</a> · <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">Kartendaten: © OpenStreetMap-Mitwirkende</a></p>
   </section>
 
@@ -111,11 +111,13 @@
       <table id="rcTable"><thead><tr><th></th><th>Artikel</th><th>Preis (Ft)</th><th>€</th></tr></thead><tbody></tbody></table>
       <p id="rcTotal" class="small"></p>
       <div class="toolbar">
-        <button id="rcAdd" class="secondary">＋ Zeile</button>
-        <button id="rcSave" class="primary">💾 Auswahl speichern</button>
+        <button id="rcAdd" class="secondary" type="button">＋ Zeile</button>
+        <button id="rcSave" class="primary" type="button">💾 Auswahl speichern</button>
       </div>
+      <button id="rcDelete" class="danger receiptDel" type="button">Beleg löschen</button>
       <details><summary class="small">Erkannter Text</summary><pre id="rcRaw"></pre></details>
     </div>
+    <div id="receiptSaved"></div>
   </section>
 </main>
 
